@@ -73,3 +73,16 @@ export const Toast: React.FC<{ message: string; onClose: () => void }> = ({ mess
     </div>
   );
 };
+
+export const Tooltip: React.FC<{ text: string }> = ({ text }) => {
+  return (
+    <div className="group relative inline-flex items-center ml-1.5 align-middle z-30">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-current opacity-50 hover:opacity-100 cursor-help transition-opacity"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+      <div className="invisible group-hover:visible absolute bottom-full left-1/2 -translate-x-1/2 mb-2 w-56 p-2.5 bg-slate-950 text-slate-200 text-xs font-normal rounded-lg border border-slate-700 shadow-xl text-center leading-relaxed">
+        {text}
+        {/* Arrow */}
+        <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-950"></div>
+      </div>
+    </div>
+  );
+};

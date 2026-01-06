@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { OutlineItem, ScriptBlock, StoryBlock, SEOResult, LoadingStates, Language } from './types';
 import * as geminiService from './services/geminiService';
-import { Card, Empty, LoadingOverlay, Modal, Toast } from './components/ui';
+import { Card, Empty, LoadingOverlay, Modal, Toast, Tooltip } from './components/ui';
 
 // --- CONFIGURATION & THEMES ---
 
@@ -125,6 +125,10 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    // Tự động lấy tên file làm tên sách
+    const fileName = file.name.replace(/\.[^/.]+$/, "");
+    setBookTitle(fileName);
+
     const reader = new FileReader();
     reader.onload = (event) => {
         const text = event.target?.result as string;
@@ -139,7 +143,7 @@ export default function App() {
             setOutline([]); 
             setScriptBlocks([]); 
             setIsStoryUploaded(true);
-            setToastMessage(`Đã upload thành công ${newBlocks.length} phần truyện. Bạn có thể nhấn 'Review Truyện' ngay bây giờ.`);
+            setToastMessage(`Đã upload truyện "${fileName}" thành công (${newBlocks.length} phần). Nhấn 'Review Truyện' để bắt đầu.`);
             e.target.value = ''; // Reset input to allow re-upload
         }
     };
@@ -327,12 +331,18 @@ export default function App() {
           <Card title="1) Thông tin sách & Cài đặt">
             <div className="space-y-4">
               <div>
-                <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Tên sách / Chủ đề</label>
+                <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                  Tên sách / Chủ đề
+                  <Tooltip text="Nhập tên sách, chủ đề hoặc từ khóa chính. AI sẽ phát triển nội dung dựa trên thông tin này." />
+                </label>
                 <input value={bookTitle} onChange={(e) => setBookTitle(e.target.value)} placeholder="Nhập tên sách hoặc chủ đề..." className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 focus:ring-2 ${theme.ring} outline-none transition-colors`} />
               </div>
               
               <div>
-                <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Ý tưởng / Bối cảnh (Tùy chọn)</label>
+                <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                  Ý tưởng / Bối cảnh (Tùy chọn)
+                  <Tooltip text="Cung cấp thêm ngữ cảnh, phong cách kể chuyện (vd: hài hước, kinh dị) hoặc ý đồ riêng để AI hiểu rõ hơn." />
+                </label>
                 <textarea 
                     value={bookIdea} 
                     onChange={(e) => setBookIdea(e.target.value)} 
@@ -343,7 +353,10 @@ export default function App() {
 
               <div>
                 <div className="flex justify-between items-center mb-1">
-                    <label className={`block text-sm font-medium ${theme.textAccent}`}>Upload Truyện (để Review ngay)</label>
+                    <label className={`block text-sm font-medium ${theme.textAccent} flex items-center`}>
+                      Upload Truyện (để Review ngay)
+                      <Tooltip text="Nếu bạn đã có sẵn nội dung truyện (file .txt), hãy tải lên đây để AI tạo kịch bản Review ngay lập tức." />
+                    </label>
                     <span className="text-[10px] opacity-70 italic">.txt</span>
                 </div>
                 <input type="file" accept=".txt" onChange={handleStoryUpload} className={`w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold ${theme.bgButton} ${theme.textHighlight} hover:file:${theme.bgCard} cursor-pointer`} />
@@ -359,16 +372,23 @@ export default function App() {
 
               <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Thời lượng (phút)</label>
+                    <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                      Thời lượng (phút)
+                      <Tooltip text="Ước lượng thời gian của video thành phẩm. AI sẽ căn chỉnh độ dài nội dung cho phù hợp." />
+                    </label>
                     <input type="number" value={durationMin} min={5} max={240} onChange={(e)=>setDurationMin(clamp(parseInt(e.target.value||'0'),5,240))} className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 transition-colors`} />
                   </div>
                   <div>
-                    <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Số chương</label>
+                    <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                      Số chương
+                      <Tooltip text="Chia nội dung thành bao nhiêu phần nhỏ. Số chương nhiều giúp nội dung chi tiết hơn cho các video dài." />
+                    </label>
                     <input type="number" value={chaptersCount} min={3} max={24} onChange={(e)=>setChaptersCount(clamp(parseInt(e.target.value||'0'),3,24))} className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 transition-colors`} />
                   </div>
               </div>
-              <div className={`p-3 rounded-lg ${theme.bgCard}/50 border ${theme.border} text-sm`}>
+              <div className={`p-3 rounded-lg ${theme.bgCard}/50 border ${theme.border} text-sm flex justify-between items-center`}>
                 <div>Tổng ký tự mục tiêu: <b>{fmtNumber(totalCharsTarget)}</b></div>
+                <Tooltip text="Số lượng ký tự ước tính dựa trên thời lượng (tốc độ đọc trung bình)." />
               </div>
             </div>
           </Card>
@@ -583,6 +603,7 @@ export default function App() {
             <h4 className={`font-bold text-lg mb-2 ${theme.textAccent}`}>Điểm Mạnh Của Tool</h4>
             <ul className="list-disc list-inside space-y-1 opacity-90">
               <li><b>Tự động hóa toàn diện:</b> Từ ý tưởng thô sơ đến kịch bản chi tiết, SEO, và Prompt hình ảnh chỉ trong vài cú click.</li>
+              <li><b>Upload & Review linh hoạt:</b> Hỗ trợ tải lên file truyện có sẵn (.txt) để AI phân tích và viết kịch bản lời dẫn (Review) ngay lập tức mà không cần qua bước tạo sườn.</li>
               <li><b>Đa ngôn ngữ & Thị trường:</b> Hỗ trợ tạo nội dung thuần Việt hoặc chuyển đổi sang tiếng Anh (US) chuẩn bản ngữ để đánh thị trường Global.</li>
               <li><b>Cơ chế API thông minh:</b> Tự động xoay vòng (Round-Robin) và chuyển đổi API Key dự phòng (Fail-over) giúp quá trình tạo không bị gián đoạn.</li>
               <li><b>Kiểm soát chất lượng:</b> Tùy chỉnh chi tiết về thời lượng, số chương, và tỷ lệ khung hình video.</li>
@@ -655,17 +676,26 @@ export default function App() {
             </div>
 
             <div>
-              <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Tên Kênh (Channel Name)</label>
+              <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                Tên Kênh (Channel Name)
+                <Tooltip text="Tên kênh YouTube của bạn. AI sẽ nhắc đến tên kênh trong phần Chào mừng hoặc Kêu gọi đăng ký." />
+              </label>
               <input value={channelName} onChange={(e) => setChannelName(e.target.value)} placeholder="VD: Sách Hay Mỗi Ngày..." className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 outline-none transition-colors`} />
             </div>
 
             <div>
-              <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Tên MC / Người dẫn (Host Name)</label>
+              <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                Tên MC / Người dẫn (Host Name)
+                <Tooltip text="Tên người dẫn chuyện. AI sẽ sử dụng để xưng hô thân mật (ví dụ: 'Chào các bạn, mình là [Tên MC]...')." />
+              </label>
               <input value={mcName} onChange={(e) => setMcName(e.target.value)} placeholder="VD: Minh Hạnh..." className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 outline-none transition-colors`} />
             </div>
 
             <div className="border-t border-dashed border-gray-700 pt-4">
-               <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Tải ảnh bìa (Tùy chọn)</label>
+               <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                 Tải ảnh bìa (Tùy chọn)
+                 <Tooltip text="Ảnh bìa sách hoặc hình ảnh đại diện để tham khảo trong quá trình làm việc (không ảnh hưởng đến AI)." />
+               </label>
                <input type="file" accept="image/*" onChange={handleFileUpload} className={`w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold ${theme.bgButton} ${theme.textHighlight} hover:file:${theme.bgCard}`} />
                {bookImage && <img src={bookImage} alt="cover" className={`mt-2 w-full max-w-xs mx-auto rounded-lg border ${theme.border}`} />}
             </div>
