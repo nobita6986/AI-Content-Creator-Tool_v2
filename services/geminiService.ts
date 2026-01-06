@@ -61,8 +61,9 @@ export const fileToBase64 = (file: File): Promise<string> => {
     });
 };
 
-export const generateOutline = async (bookTitle: string, chaptersCount: number, durationMin: number, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<Omit<OutlineItem, 'index'>[]> => {
-    const prompt = `Dựa trên tên sách "${bookTitle}", hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách audiobook "nhân văn hóa" dài ${durationMin} phút. Dàn ý cần có khoảng ${chaptersCount} chương nội dung chính. Cấu trúc phải bao gồm: 1. Hook (Móc nối), 2. Intro + POV của người dẫn chuyện, 3. Các chương chính (đặt tiêu đề theo chủ đề có thể có của sách), 4. Kế hoạch hành động 7 ngày, 5. Tóm tắt 3 điểm chính, và 6. Kêu gọi hành động (CTA). Với mỗi mục trong dàn ý, hãy cung cấp 'title' (tiêu đề), 'focus' (nội dung chính của phần đó), và một danh sách 3-4 'actions' (các điểm chính cần nói). Trả lời bằng tiếng Việt.`;
+export const generateOutline = async (bookTitle: string, idea: string, chaptersCount: number, durationMin: number, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<Omit<OutlineItem, 'index'>[]> => {
+    const ideaContext = idea ? `Kết hợp với ý tưởng/bối cảnh sau: "${idea}".` : "";
+    const prompt = `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook dài ${durationMin} phút. Dàn ý cần có khoảng ${chaptersCount} chương nội dung chính. Cấu trúc phải bao gồm: 1. Hook (Móc nối), 2. Intro, 3. Các chương chính của câu chuyện, 4. Bài học rút ra, và 5. Kết thúc. Với mỗi mục, cung cấp 'title' (tiêu đề), 'focus' (trọng tâm nội dung), và 3-4 'actions' (chi tiết chính). Trả lời JSON.`;
 
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -92,8 +93,48 @@ export const generateOutline = async (bookTitle: string, chaptersCount: number, 
     });
 };
 
+// NEW: Generate Story Content based on Outline
+export const generateStoryBlock = async (item: OutlineItem, bookTitle: string, idea: string, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
+    const ideaContext = idea ? `Lưu ý ý tưởng chủ đạo: "${idea}".` : "";
+    const prompt = `Bạn là một tiểu thuyết gia tài ba. Hãy viết nội dung chi tiết cho chương "${item.title}" của tác phẩm "${bookTitle}". ${ideaContext}
+    Mục tiêu chương này: "${item.focus}".
+    Các tình tiết chính: ${item.actions.join(', ')}.
+    Hãy viết dưới dạng văn xuôi, kể chuyện, văn phong lôi cuốn, giàu cảm xúc. Độ dài khoảng 400-600 từ. Chỉ trả về nội dung truyện, không bao gồm lời dẫn của AI.`;
+    
+    return executeGenAIRequest(apiKey, async (ai) => {
+        const response = await ai.models.generateContent({
+            model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
+            contents: [{ parts: [{ text: prompt }] }],
+        });
+        return response.text;
+    });
+};
+
+// UPDATED: Generate Review Script based on Story Content (instead of Outline)
+export const generateReviewBlock = async (storyContent: string, chapterTitle: string, bookTitle: string, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
+    const prompt = `Bạn là một Reviewer/MC kênh AudioBook nổi tiếng (giọng đọc trầm ấm, sâu sắc).
+    Nhiệm vụ: Viết lời dẫn/kịch bản Review cho phần nội dung sau của cuốn sách/truyện "${bookTitle}".
+    
+    Chương: "${chapterTitle}"
+    Nội dung gốc: "${storyContent}"
+    
+    Yêu cầu:
+    1. Không đọc lại y nguyên truyện. Hãy phân tích, bình luận, và dẫn dắt người nghe đi qua các tình tiết này.
+    2. Đan xen giữa kể lại tóm tắt và đưa ra bài học/cảm nhận sâu sắc.
+    3. Giọng văn tự nhiên, như đang trò chuyện với thính giả.
+    4. Trả lời bằng tiếng Việt.`;
+    
+    return executeGenAIRequest(apiKey, async (ai) => {
+        const response = await ai.models.generateContent({
+            model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
+            contents: [{ parts: [{ text: prompt }] }],
+        });
+        return response.text;
+    });
+};
+
 export const generateSEO = async (bookTitle: string, durationMin: number, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
-    const prompt = `Tạo nội dung SEO cho một video YouTube về cuốn sách "${bookTitle}". Video này là một bài phân tích theo phong cách audiobook dài ${durationMin} phút. Hãy cung cấp: 8 tiêu đề hấp dẫn, một danh sách các hashtag liên quan, một danh sách từ khóa, và một phần mô tả video hấp dẫn. Trả lời bằng tiếng Việt.`;
+    const prompt = `Tạo nội dung SEO cho video YouTube về "${bookTitle}". Video dạng Review/Kể chuyện dài ${durationMin} phút. Cung cấp: 8 tiêu đề clickbait/hấp dẫn, hashtags, keywords, và mô tả video chuẩn SEO. JSON format.`;
 
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -118,20 +159,8 @@ export const generateSEO = async (bookTitle: string, durationMin: number, model:
     });
 };
 
-export const generateScriptBlock = async (item: OutlineItem, bookTitle: string, targetChars: number, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
-    const prompt = `Bạn là một người viết kịch bản cho kênh YouTube nổi tiếng. Phong cách của bạn là một người dẫn chuyện tự nhiên, đàm thoại cho audiobook, kết hợp với góc nhìn cá nhân. Hãy viết kịch bản cho phần có tiêu đề "${item.title}" trong một video về cuốn sách "${bookTitle}". Mục tiêu của phần này là: "${item.focus}". Các điểm chính cần nói là: ${item.actions.join(', ')}. Kịch bản nên dài khoảng ${targetChars} ký tự. Viết bằng giọng văn tự nhiên, hấp dẫn, phù hợp để thu âm. Trả lời bằng tiếng Việt.`;
-    
-    return executeGenAIRequest(apiKey, async (ai) => {
-        const response = await ai.models.generateContent({
-            model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
-            contents: [{ parts: [{ text: prompt }] }],
-        });
-        return response.text;
-    });
-};
-
 export const generateVideoPrompts = async (bookTitle: string, frameRatio: string, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
-    const prompt = `Generate 5 cinematic, photorealistic video prompts for background visuals in a YouTube video about the book "${bookTitle}". The prompts should be inspired by the book's main themes (e.g., if about stoicism, think calm nature, ancient architecture; if sci-fi, think cosmic visuals). Each prompt MUST be for the aspect ratio ${frameRatio}. The style should be beautiful, subtle, and non-distracting. Do not include any text or logos. Respond with a JSON array of strings.`;
+    const prompt = `Generate 5 cinematic, photorealistic video prompts for background visuals in a YouTube video about "${bookTitle}". Visuals should match the story's mood. Aspect ratio: ${frameRatio}. No text/logos. JSON array of strings.`;
     
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -152,7 +181,7 @@ export const generateVideoPrompts = async (bookTitle: string, frameRatio: string
 
 export const generateThumbIdeas = async (bookTitle: string, durationMin: number, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
     const durationStr = `${Math.floor(durationMin / 60)}H${(durationMin % 60).toString().padStart(2, "0")}M`;
-    const prompt = `Cho một video YouTube về cuốn sách "${bookTitle}", hãy đề xuất 5 ý tưởng văn bản ngắn gọn, có tác động mạnh cho thumbnail. Văn bản phải hấp dẫn và bằng tiếng Việt. Một ý tưởng phải bao gồm thời lượng: ${durationStr}.`;
+    const prompt = `Cho video YouTube về "${bookTitle}", đề xuất 5 text thumbnail ngắn gọn, gây tò mò, tiếng Việt. Một ý phải chứa thời lượng: ${durationStr}. JSON array.`;
     
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -169,4 +198,21 @@ export const generateThumbIdeas = async (bookTitle: string, durationMin: number,
         const jsonText = response.text.trim();
         return JSON.parse(jsonText);
     });
+};
+
+// Helper to chunk large text if needed (simple version)
+export const chunkText = (text: string, maxChars: number = 2000): string[] => {
+    const chunks: string[] = [];
+    let currentChunk = "";
+    const paragraphs = text.split('\n');
+    
+    for (const para of paragraphs) {
+        if ((currentChunk + para).length > maxChars && currentChunk.length > 0) {
+            chunks.push(currentChunk);
+            currentChunk = "";
+        }
+        currentChunk += para + "\n";
+    }
+    if (currentChunk.trim().length > 0) chunks.push(currentChunk);
+    return chunks;
 };

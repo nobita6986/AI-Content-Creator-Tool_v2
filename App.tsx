@@ -1,11 +1,12 @@
 
 import React, { useEffect, useMemo, useState, useCallback } from "react";
-import { OutlineItem, ScriptBlock, SEOResult, LoadingStates } from './types';
+import { OutlineItem, ScriptBlock, StoryBlock, SEOResult, LoadingStates } from './types';
 import * as geminiService from './services/geminiService';
 import { Card, Empty, LoadingOverlay, Modal } from './components/ui';
 
 const INITIAL_LOADING_STATES: LoadingStates = {
   outline: false,
+  story: false,
   seo: false,
   script: false,
   prompts: false,
@@ -32,6 +33,7 @@ const Button: React.FC<ButtonProps> = ({ children, onClick, disabled, className,
 
 export default function App() {
   const [bookTitle, setBookTitle] = useState("");
+  const [bookIdea, setBookIdea] = useState(""); // New: Idea input
   const [bookImage, setBookImage] = useState<string | null>(null);
   const [frameRatio, setFrameRatio] = useState("9:16");
   const [durationMin, setDurationMin] = useState(240);
@@ -44,6 +46,7 @@ export default function App() {
   const [apiKeyOpenAI, setApiKeyOpenAI] = useState("");
 
   const [outline, setOutline] = useState<OutlineItem[]>([]);
+  const [storyBlocks, setStoryBlocks] = useState<StoryBlock[]>([]); // New: Story content
   const [seo, setSeo] = useState<SEOResult | null>(null);
   const [scriptBlocks, setScriptBlocks] = useState<ScriptBlock[]>([]);
   const [videoPrompts, setVideoPrompts] = useState<string[]>([]);
@@ -54,7 +57,6 @@ export default function App() {
 
   const totalCharsTarget = useMemo(() => durationMin * 1000, [durationMin]);
 
-  // Load keys from localStorage on mount
   useEffect(() => {
     const storedGeminiKey = localStorage.getItem("nd_gemini_api_key");
     const storedOpenAIKey = localStorage.getItem("nd_openai_api_key");
@@ -65,7 +67,6 @@ export default function App() {
   const handleSaveKeys = () => {
     localStorage.setItem("nd_gemini_api_key", apiKeyGemini);
     localStorage.setItem("nd_openai_api_key", apiKeyOpenAI);
-    // alert("Đã lưu API Key thành công vào trình duyệt!"); 
     setIsApiModalOpen(false);
   };
 
@@ -77,13 +78,38 @@ export default function App() {
     reader.readAsDataURL(file);
   };
 
+  // New: Handle Text/Doc Upload for Story
+  const handleStoryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Simple text file reading
+    const reader = new FileReader();
+    reader.onload = (event) => {
+        const text = event.target?.result as string;
+        if (text) {
+            // Split text into chunks to simulate chapters/blocks
+            const chunks = geminiService.chunkText(text, 3000);
+            const newBlocks: StoryBlock[] = chunks.map((chunk, idx) => ({
+                index: idx + 1,
+                title: `Phần ${idx + 1} (Upload)`,
+                content: chunk
+            }));
+            setStoryBlocks(newBlocks);
+            setOutline([]); // Clear outline as we are using uploaded story
+            setScriptBlocks([]); // Clear previous scripts
+            alert(`Đã upload thành công ${newBlocks.length} phần truyện. Bạn có thể nhấn 'Review Truyện' ngay bây giờ.`);
+        }
+    };
+    reader.readAsText(file);
+  };
+
   const withErrorHandling = <T extends any[], R>(fn: (...args: T) => Promise<R>, key: keyof LoadingStates) => {
     return async (...args: T): Promise<R | void> => {
       if (!bookTitle) {
         setError("Vui lòng nhập tên sách trước.");
         return;
       }
-      // Basic validation for OpenAI selection
       if (selectedModel.startsWith("gpt") && !apiKeyOpenAI) {
         setError("Vui lòng nhập OpenAI API Key để sử dụng các model ChatGPT.");
         return;
@@ -102,12 +128,56 @@ export default function App() {
     };
   };
 
-  // Pass apiKeyGemini to services. 
   const handleGenerateOutline = withErrorHandling(async () => {
-    const result = await geminiService.generateOutline(bookTitle, chaptersCount, durationMin, selectedModel, apiKeyGemini);
+    // Pass bookIdea to outline generation
+    const result = await geminiService.generateOutline(bookTitle, bookIdea, chaptersCount, durationMin, selectedModel, apiKeyGemini);
     const indexedResult = result.map((item, index) => ({ ...item, index }));
     setOutline(indexedResult);
+    // Clear story and scripts when new outline is generated
+    setStoryBlocks([]);
+    setScriptBlocks([]);
   }, 'outline');
+
+  // NEW: Generate Story based on Outline
+  const handleGenerateStory = withErrorHandling(async () => {
+    if (outline.length === 0) {
+        setError("Cần có sườn (outline) trước khi viết truyện. Hoặc hãy upload file truyện.");
+        setLoading(prev => ({ ...prev, story: false }));
+        return;
+    }
+    
+    setStoryBlocks([]);
+    for (const item of outline) {
+        const content = await geminiService.generateStoryBlock(item, bookTitle, bookIdea, selectedModel, apiKeyGemini);
+        setStoryBlocks(prev => [...prev, {
+            index: item.index,
+            title: item.title,
+            content: content
+        }]);
+    }
+  }, 'story');
+
+  // UPDATED: Generate Review (Script) based on Story Blocks
+  const handleGenerateReviewScript = withErrorHandling(async () => {
+    if (storyBlocks.length === 0) {
+        setError("Chưa có nội dung truyện. Vui lòng 'Viết Truyện' hoặc Upload file truyện trước.");
+        setLoading(prev => ({ ...prev, script: false }));
+        return;
+    }
+
+    setScriptBlocks([]);
+    
+    for (const block of storyBlocks) {
+      const text = await geminiService.generateReviewBlock(block.content, block.title, bookTitle, selectedModel, apiKeyGemini);
+      const newBlock: ScriptBlock = {
+        index: block.index,
+        chapter: block.title,
+        text: text,
+        chars: text.length,
+      };
+      setScriptBlocks(prev => [...prev, newBlock]);
+    }
+  }, 'script');
 
   const handleGenerateSEO = withErrorHandling(async () => {
     const result = await geminiService.generateSEO(bookTitle, durationMin, selectedModel, apiKeyGemini);
@@ -122,30 +192,6 @@ export default function App() {
     setVideoPrompts(prompts);
     setThumbTextIdeas(thumbs);
   }, 'prompts');
-
-  const handleGenerateScript = withErrorHandling(async () => {
-    setScriptBlocks([]);
-    let currentOutline = outline;
-    if (currentOutline.length === 0) {
-      const generatedOutline = await geminiService.generateOutline(bookTitle, chaptersCount, durationMin, selectedModel, apiKeyGemini);
-      currentOutline = generatedOutline.map((item, index) => ({ ...item, index }));
-      setOutline(currentOutline);
-    }
-
-    const totalWeight = currentOutline.length; 
-    const charsPerBlock = Math.round(totalCharsTarget / totalWeight);
-
-    for (const item of currentOutline) {
-      const text = await geminiService.generateScriptBlock(item, bookTitle, charsPerBlock, selectedModel, apiKeyGemini);
-      const newBlock: ScriptBlock = {
-        index: item.index + 1,
-        chapter: item.title,
-        text: text,
-        chars: text.length,
-      };
-      setScriptBlocks(prev => [...prev, newBlock]);
-    }
-  }, 'script');
 
   const clamp = (n: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, n));
   const fmtNumber = (n: number) => n.toLocaleString("vi-VN");
@@ -163,8 +209,14 @@ export default function App() {
 
   const exportScriptCSV = () => {
     if (!scriptBlocks.length) return;
-    const rows = [["STT", "Chương", "Kịch bản"], ...scriptBlocks.map(b => [String(b.index), b.chapter, b.text])];
-    downloadCSV(`kichban_${geminiService.slugify(bookTitle)}.csv`, rows);
+    const rows = [["STT", "Chương", "Review/Kịch bản"], ...scriptBlocks.map(b => [String(b.index), b.chapter, b.text])];
+    downloadCSV(`review_${geminiService.slugify(bookTitle)}.csv`, rows);
+  };
+
+  const exportStoryCSV = () => {
+    if (!storyBlocks.length) return;
+    const rows = [["STT", "Chương", "Nội dung Truyện"], ...storyBlocks.map(b => [String(b.index), b.title, b.content])];
+    downloadCSV(`truyen_${geminiService.slugify(bookTitle)}.csv`, rows);
   };
 
   const exportPromptCSV = () => {
@@ -199,14 +251,36 @@ export default function App() {
           <Card title="1) Thông tin sách & Cài đặt">
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-sky-300 mb-1">Tên sách</label>
-                <input value={bookTitle} onChange={(e) => setBookTitle(e.target.value)} placeholder="Nhập tên sách…" className="w-full rounded-lg bg-slate-900/70 border border-sky-900 px-3 py-2 focus:ring-2 focus:ring-sky-500 outline-none" />
+                <label className="block text-sm font-medium text-sky-300 mb-1">Tên sách / Chủ đề</label>
+                <input value={bookTitle} onChange={(e) => setBookTitle(e.target.value)} placeholder="Nhập tên sách hoặc chủ đề..." className="w-full rounded-lg bg-slate-900/70 border border-sky-900 px-3 py-2 focus:ring-2 focus:ring-sky-500 outline-none" />
               </div>
+              
+              {/* New Idea Input */}
               <div>
-                <label className="block text-sm font-medium text-sky-300 mb-1">Tải ảnh bìa (tùy chọn)</label>
+                <label className="block text-sm font-medium text-sky-300 mb-1">Ý tưởng / Bối cảnh (Tùy chọn)</label>
+                <textarea 
+                    value={bookIdea} 
+                    onChange={(e) => setBookIdea(e.target.value)} 
+                    placeholder="Mô tả ý tưởng, bối cảnh, hoặc phong cách bạn muốn..." 
+                    className="w-full rounded-lg bg-slate-900/70 border border-sky-900 px-3 py-2 focus:ring-2 focus:ring-sky-500 outline-none min-h-[80px] text-sm" 
+                />
+              </div>
+
+              {/* Enhanced File Upload */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                    <label className="block text-sm font-medium text-sky-300">Upload Truyện (để Review ngay)</label>
+                    <span className="text-[10px] text-sky-500 italic">.txt</span>
+                </div>
+                <input type="file" accept=".txt" onChange={handleStoryUpload} className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-900/50 file:text-sky-200 hover:file:bg-sky-900/80 cursor-pointer" />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-sky-300 mb-1">Tải ảnh bìa (Tùy chọn)</label>
                 <input type="file" accept="image/*" onChange={handleFileUpload} className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-sky-900/50 file:text-sky-200 hover:file:bg-sky-900/80" />
                 {bookImage && <img src={bookImage} alt="cover" className="mt-2 w-full max-w-xs mx-auto rounded-lg border border-sky-900/60" />}
               </div>
+
               <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-sky-300 mb-1">Thời lượng (phút)</label>
@@ -214,11 +288,8 @@ export default function App() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-sky-300 mb-1">Số chương</label>
-                    <input type="number" value={chaptersCount} min={6} max={24} onChange={(e)=>setChaptersCount(clamp(parseInt(e.target.value||'0'),6,24))} className="w-full rounded-lg bg-slate-900/70 border border-sky-900 px-3 py-2" />
+                    <input type="number" value={chaptersCount} min={3} max={24} onChange={(e)=>setChaptersCount(clamp(parseInt(e.target.value||'0'),3,24))} className="w-full rounded-lg bg-slate-900/70 border border-sky-900 px-3 py-2" />
                   </div>
-              </div>
-              <div className="p-3 rounded-lg bg-slate-900/50 border border-sky-900/60 text-sm">
-                <div>Tổng ký tự mục tiêu: <b>{fmtNumber(totalCharsTarget)}</b></div>
               </div>
             </div>
           </Card>
@@ -226,8 +297,8 @@ export default function App() {
           <Card title="2) Tạo Nội Dung">
             <div className="flex flex-col space-y-2">
               <Button onClick={handleGenerateOutline} disabled={loading.outline}>Phân tích & Tạo sườn</Button>
-              {/* Order changed: Script before SEO */}
-              <Button onClick={handleGenerateScript} disabled={loading.script}>Viết Kịch Bản Chi Tiết</Button>
+              <Button onClick={handleGenerateStory} disabled={loading.story}>Viết Truyện (Theo sườn)</Button>
+              <Button onClick={handleGenerateReviewScript} disabled={loading.script}>Review Truyện (Kịch bản Audio)</Button>
               <Button onClick={handleGenerateSEO} disabled={loading.seo}>Tạo Tiêu đề & Mô tả SEO</Button>
               <Button onClick={handleGeneratePrompts} disabled={loading.prompts}>Tạo Prompt Video & Thumbnail</Button>
               {error && <p className="text-sm text-red-400 mt-2">{error}</p>}
@@ -236,8 +307,8 @@ export default function App() {
         </section>
 
         <section className="lg:col-span-2 space-y-6">
-          <Card title="3) Sườn kịch bản (Humanized Audiobook)" actions={
-              <Button onClick={handleGenerateOutline} disabled={loading.outline} className="text-xs px-2 py-1 h-8">Phân tích & Tạo sườn</Button>
+          <Card title="3) Sườn kịch bản" actions={
+              <Button onClick={handleGenerateOutline} disabled={loading.outline} className="text-xs px-2 py-1 h-8">Tạo sườn</Button>
           }>
             <div className="relative">
              {loading.outline && <LoadingOverlay />}
@@ -257,15 +328,37 @@ export default function App() {
             </div>
           </Card>
 
-          <Card title="4) Kịch bản chi tiết" actions={
+          {/* NEW SECTION 4: Story Content */}
+          <Card title="4) Nội dung Truyện" actions={
             <div className="flex gap-2">
-               <Button onClick={handleGenerateScript} disabled={loading.script} className="text-xs px-2 py-1 h-8">Viết Kịch Bản</Button>
+               <Button onClick={handleGenerateStory} disabled={loading.story} className="text-xs px-2 py-1 h-8">Viết Truyện</Button>
+               <Button onClick={exportStoryCSV} disabled={storyBlocks.length === 0} className="text-xs px-2 py-1 h-8">Tải CSV</Button>
+            </div>
+          }>
+             <div className="relative">
+                {loading.story && <LoadingOverlay />}
+                {storyBlocks.length === 0 ? <Empty text="Chưa có nội dung truyện. Nhấn 'Viết Truyện' hoặc Upload file truyện." /> : (
+                  <div className="space-y-3 max-h-[600px] overflow-y-auto pr-2">
+                    {storyBlocks.map((b) => (
+                      <div key={b.index} className="p-3 rounded-xl bg-slate-900/50 border border-sky-900/60">
+                         <div className="font-semibold text-sky-200 mb-2">{b.title}</div>
+                         <p className="whitespace-pre-wrap leading-relaxed text-sky-100 text-sm">{b.content}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+            </div>
+          </Card>
+
+          <Card title="5) Review Truyện (Kịch bản Audio)" actions={
+            <div className="flex gap-2">
+               <Button onClick={handleGenerateReviewScript} disabled={loading.script} className="text-xs px-2 py-1 h-8">Review Truyện</Button>
                <Button onClick={exportScriptCSV} disabled={scriptBlocks.length === 0} className="text-xs px-2 py-1 h-8">Tải CSV</Button>
             </div>
           }>
              <div className="relative">
                 {loading.script && <LoadingOverlay />}
-                {scriptBlocks.length === 0 ? <Empty text="Chưa có kịch bản. Nhấn ‘Viết Kịch Bản’." /> : (
+                {scriptBlocks.length === 0 ? <Empty text="Chưa có kịch bản review. Nhấn ‘Review Truyện’." /> : (
                   <div className="space-y-3 max-h-[800px] overflow-y-auto pr-2">
                     {scriptBlocks.map((b) => (
                       <div key={b.index} className="p-3 rounded-xl bg-slate-900/50 border border-sky-900/60">
@@ -282,8 +375,8 @@ export default function App() {
             </div>
           </Card>
 
-          <Card title="5) Gợi ý SEO (Tiêu đề, Mô tả...)" actions={
-             <Button onClick={handleGenerateSEO} disabled={loading.seo} className="text-xs px-2 py-1 h-8" title="Tạo Tiêu đề & Mô tả SEO">Tạo SEO</Button>
+          <Card title="6) Gợi ý SEO" actions={
+             <Button onClick={handleGenerateSEO} disabled={loading.seo} className="text-xs px-2 py-1 h-8">Tạo SEO</Button>
           }>
             <div className="relative">
               {loading.seo && <LoadingOverlay />}
@@ -304,20 +397,20 @@ export default function App() {
             </div>
           </Card>
 
-          <Card title="6) Prompt Video & Thumbnail" actions={
+          <Card title="7) Prompt Video & Thumbnail" actions={
               <div className="flex items-center gap-2">
                 <span className="inline-flex items-center gap-1 text-sm">Khung hình:
                   <select value={frameRatio} onChange={(e)=>setFrameRatio(e.target.value)} className="bg-transparent outline-none ml-1 text-sky-200 rounded p-1 border border-transparent hover:border-sky-800">
                     {['9:16','16:9','1:1','4:5','21:9'].map(r=> <option key={r} value={r} className="bg-slate-900">{r}</option>)}
                   </select>
                 </span>
-                <Button onClick={handleGeneratePrompts} disabled={loading.prompts} className="text-xs px-2 py-1 h-8" title="Tạo Prompt Video & Thumbnail">Tạo Prompt</Button>
+                <Button onClick={handleGeneratePrompts} disabled={loading.prompts} className="text-xs px-2 py-1 h-8">Tạo Prompt</Button>
                 <Button onClick={exportPromptCSV} disabled={videoPrompts.length === 0} className="text-xs px-2 py-1 h-8">Tải CSV</Button>
               </div>
           }>
             <div className="relative">
               {loading.prompts && <LoadingOverlay />}
-              {videoPrompts.length === 0 && thumbTextIdeas.length === 0 ? <Empty text="Chưa có prompt. Nhấn ‘Tạo prompt video & thumbnail’." /> : (
+              {videoPrompts.length === 0 && thumbTextIdeas.length === 0 ? <Empty text="Chưa có prompt." /> : (
                  <div className="grid md:grid-cols-2 gap-4">
                   <div>
                     <h4 className="font-semibold mb-2">Prompt Video (Không gian/Vũ trụ)</h4>
