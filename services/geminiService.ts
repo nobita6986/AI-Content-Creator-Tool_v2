@@ -61,17 +61,18 @@ export const fileToBase64 = (file: File): Promise<string> => {
     });
 };
 
-export const generateOutline = async (bookTitle: string, idea: string, chaptersCount: number, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<Omit<OutlineItem, 'index'>[]> => {
+export const generateOutline = async (bookTitle: string, idea: string, channelName: string, mcName: string, chaptersCount: number, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<Omit<OutlineItem, 'index'>[]> => {
     const isVi = language === 'vi';
     const langContext = isVi 
         ? "Ngôn ngữ đầu ra: Tiếng Việt." 
         : "Output Language: English (US). Tone: Professional, Engaging.";
     
+    const identityContext = `Context info - Channel Name: "${channelName || 'N/A'}", Host/MC Name: "${mcName || 'N/A'}".`;
     const ideaContext = idea ? (isVi ? `Kết hợp với ý tưởng/bối cảnh: "${idea}".` : `Incorporate this idea/context: "${idea}".`) : "";
     
     const prompt = isVi 
-        ? `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook dài ${durationMin} phút. Dàn ý cần có khoảng ${chaptersCount} chương nội dung chính. Cấu trúc phải bao gồm: 1. Hook (Móc nối), 2. Intro, 3. Các chương chính của câu chuyện, 4. Bài học rút ra, và 5. Kết thúc. ${langContext}`
-        : `Based on the book/topic "${bookTitle}". ${ideaContext} Create a script outline for a YouTube video in storytelling/audiobook style, ${durationMin} minutes long. The outline should have about ${chaptersCount} main chapters. Structure: 1. Hook, 2. Intro, 3. Main Story Chapters, 4. Key Takeaways, 5. Conclusion. ${langContext}`;
+        ? `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} ${identityContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook dài ${durationMin} phút. Dàn ý cần có khoảng ${chaptersCount} chương nội dung chính. Cấu trúc phải bao gồm: 1. Hook (Móc nối - Nhắc tên kênh ${channelName} nếu phù hợp), 2. Intro (Giới thiệu MC ${mcName}), 3. Các chương chính của câu chuyện, 4. Bài học rút ra, và 5. Kết thúc. ${langContext}`
+        : `Based on the book/topic "${bookTitle}". ${ideaContext} ${identityContext} Create a script outline for a YouTube video in storytelling/audiobook style, ${durationMin} minutes long. The outline should have about ${chaptersCount} main chapters. Structure: 1. Hook (Mention channel ${channelName} if fitting), 2. Intro (Introduce Host ${mcName}), 3. Main Story Chapters, 4. Key Takeaways, 5. Conclusion. ${langContext}`;
 
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -122,16 +123,21 @@ export const generateStoryBlock = async (item: OutlineItem, bookTitle: string, i
     });
 };
 
-export const generateReviewBlock = async (storyContent: string, chapterTitle: string, bookTitle: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
+export const generateReviewBlock = async (storyContent: string, chapterTitle: string, bookTitle: string, channelName: string, mcName: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
     const isVi = language === 'vi';
-    
+    const identityInfo = isVi 
+        ? `Tên Kênh: "${channelName || 'Kênh của bạn'}", Tên MC: "${mcName || 'Mình'}".`
+        : `Channel Name: "${channelName || 'Your Channel'}", Host Name: "${mcName || 'Me'}".`;
+
     const prompt = isVi
         ? `Bạn là một Reviewer/MC kênh AudioBook nổi tiếng (giọng đọc trầm ấm, sâu sắc).
+           Thông tin định danh: ${identityInfo}. Hãy sử dụng tên Kênh và tên MC này thay cho các từ chung chung khi chào hỏi hoặc giới thiệu.
            Nhiệm vụ: Viết lời dẫn/kịch bản Review cho phần nội dung sau của cuốn sách "${bookTitle}".
            Chương: "${chapterTitle}"
            Nội dung gốc: "${storyContent}"
            Yêu cầu: Phân tích, bình luận, dẫn dắt. Đan xen tóm tắt và bài học. Giọng văn tự nhiên. Trả lời Tiếng Việt.`
         : `You are a famous Audiobook Narrator/Reviewer (warm, insightful voice).
+           Identity Info: ${identityInfo}. Use this Channel Name and Host Name naturally in intros/outros instead of placeholders.
            Task: Write a script/commentary review for the following content of the book "${bookTitle}".
            Chapter: "${chapterTitle}"
            Original Content: "${storyContent}"
@@ -146,11 +152,13 @@ export const generateReviewBlock = async (storyContent: string, chapterTitle: st
     });
 };
 
-export const generateSEO = async (bookTitle: string, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
+export const generateSEO = async (bookTitle: string, channelName: string, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
     const isVi = language === 'vi';
+    const channelContext = channelName ? (isVi ? `Tên kênh là "${channelName}".` : `Channel name is "${channelName}".`) : "";
+
     const prompt = isVi
-        ? `Tạo nội dung SEO cho video YouTube về "${bookTitle}". Dạng Review/Kể chuyện dài ${durationMin} phút. Cung cấp: 8 tiêu đề clickbait, hashtags, keywords, và mô tả video chuẩn SEO. JSON format. Ngôn ngữ: Tiếng Việt.`
-        : `Generate SEO content for a YouTube video about "${bookTitle}". Format: Audiobook/Review, ${durationMin} minutes long. Provide: 8 clickbait titles, hashtags, keywords, and a SEO-optimized video description. JSON format. Language: English.`;
+        ? `Tạo nội dung SEO cho video YouTube về "${bookTitle}". ${channelContext} Dạng Review/Kể chuyện dài ${durationMin} phút. Cung cấp: 8 tiêu đề clickbait, hashtags, keywords (bao gồm tên kênh), và mô tả video chuẩn SEO (nhắc đến tên kênh). JSON format. Ngôn ngữ: Tiếng Việt.`
+        : `Generate SEO content for a YouTube video about "${bookTitle}". ${channelContext} Format: Audiobook/Review, ${durationMin} minutes long. Provide: 8 clickbait titles, hashtags, keywords (include channel name), and a SEO-optimized video description (mention channel name). JSON format. Language: English.`;
 
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({

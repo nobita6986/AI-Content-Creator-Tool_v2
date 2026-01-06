@@ -58,12 +58,18 @@ export default function App() {
   const [bookTitle, setBookTitle] = useState("");
   const [bookIdea, setBookIdea] = useState("");
   const [bookImage, setBookImage] = useState<string | null>(null);
+  const [channelName, setChannelName] = useState("");
+  const [mcName, setMcName] = useState("");
+
   const [frameRatio, setFrameRatio] = useState("16:9"); // Default to 16:9
   const [durationMin, setDurationMin] = useState(240);
   const [chaptersCount, setChaptersCount] = useState(12);
 
   const [selectedModel, setSelectedModel] = useState("gemini-3-pro-preview");
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
+  const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
+  const [isExtraConfigModalOpen, setIsExtraConfigModalOpen] = useState(false);
+
   const [apiKeyGemini, setApiKeyGemini] = useState("");
   const [apiKeyOpenAI, setApiKeyOpenAI] = useState("");
 
@@ -83,14 +89,25 @@ export default function App() {
   useEffect(() => {
     const storedGeminiKey = localStorage.getItem("nd_gemini_api_key");
     const storedOpenAIKey = localStorage.getItem("nd_openai_api_key");
+    const storedChannel = localStorage.getItem("nd_channel_name");
+    const storedMC = localStorage.getItem("nd_mc_name");
+
     if (storedGeminiKey) setApiKeyGemini(storedGeminiKey);
     if (storedOpenAIKey) setApiKeyOpenAI(storedOpenAIKey);
+    if (storedChannel) setChannelName(storedChannel);
+    if (storedMC) setMcName(storedMC);
   }, []);
 
   const handleSaveKeys = () => {
     localStorage.setItem("nd_gemini_api_key", apiKeyGemini);
     localStorage.setItem("nd_openai_api_key", apiKeyOpenAI);
     setIsApiModalOpen(false);
+  };
+
+  const handleSaveExtraConfig = () => {
+    localStorage.setItem("nd_channel_name", channelName);
+    localStorage.setItem("nd_mc_name", mcName);
+    setIsExtraConfigModalOpen(false);
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -149,7 +166,7 @@ export default function App() {
   };
 
   const handleGenerateOutline = withErrorHandling(async () => {
-    const result = await geminiService.generateOutline(bookTitle, bookIdea, chaptersCount, durationMin, language, selectedModel, apiKeyGemini);
+    const result = await geminiService.generateOutline(bookTitle, bookIdea, channelName, mcName, chaptersCount, durationMin, language, selectedModel, apiKeyGemini);
     const indexedResult = result.map((item, index) => ({ ...item, index }));
     setOutline(indexedResult);
     setStoryBlocks([]);
@@ -183,7 +200,7 @@ export default function App() {
 
     setScriptBlocks([]);
     for (const block of storyBlocks) {
-      const text = await geminiService.generateReviewBlock(block.content, block.title, bookTitle, language, selectedModel, apiKeyGemini);
+      const text = await geminiService.generateReviewBlock(block.content, block.title, bookTitle, channelName, mcName, language, selectedModel, apiKeyGemini);
       const newBlock: ScriptBlock = {
         index: block.index,
         chapter: block.title,
@@ -195,7 +212,7 @@ export default function App() {
   }, 'script');
 
   const handleGenerateSEO = withErrorHandling(async () => {
-    const result = await geminiService.generateSEO(bookTitle, durationMin, language, selectedModel, apiKeyGemini);
+    const result = await geminiService.generateSEO(bookTitle, channelName, durationMin, language, selectedModel, apiKeyGemini);
     setSeo(result);
   }, 'seo');
   
@@ -287,6 +304,14 @@ export default function App() {
                 <span>Cấu hình API</span>
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
+
+               <button 
+                onClick={() => setIsGuideModalOpen(true)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full ${theme.bgCard}/80 border ${theme.borderLight} ${theme.textAccent} text-sm font-medium hover:${theme.bgButton} hover:text-white transition shadow-lg`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
+                <span>Hướng dẫn</span>
+              </button>
           </div>
         </div>
       </header>
@@ -318,10 +343,12 @@ export default function App() {
                 <input type="file" accept=".txt" onChange={handleStoryUpload} className={`w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold ${theme.bgButton} ${theme.textHighlight} hover:file:${theme.bgCard} cursor-pointer`} />
               </div>
 
-              <div>
-                <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Tải ảnh bìa (Tùy chọn)</label>
-                <input type="file" accept="image/*" onChange={handleFileUpload} className={`w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold ${theme.bgButton} ${theme.textHighlight} hover:file:${theme.bgCard}`} />
-                {bookImage && <img src={bookImage} alt="cover" className={`mt-2 w-full max-w-xs mx-auto rounded-lg border ${theme.border}`} />}
+              <div className="pt-1">
+                 <button onClick={() => setIsExtraConfigModalOpen(true)} className={`w-full py-2 rounded-lg ${theme.bgCard} border border-dashed ${theme.border} ${theme.textAccent} hover:${theme.bgButton} transition text-sm flex items-center justify-center gap-2`}>
+                   <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                   Cấu hình thêm (Ảnh bìa, Kênh, MC)
+                 </button>
+                 {(bookImage || channelName || mcName) && <div className="text-[10px] mt-1 text-center opacity-60">Đã có thông tin bổ sung</div>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -536,6 +563,113 @@ export default function App() {
                 </div>
             </div>
         </div>
+      </Modal>
+
+      {/* Guide Modal */}
+      <Modal 
+        isOpen={isGuideModalOpen} 
+        onClose={() => setIsGuideModalOpen(false)} 
+        title="Hướng dẫn sử dụng & Quy trình"
+      >
+        <div className={`space-y-6 ${theme.textHighlight}`}>
+          
+          <div className={`p-4 rounded-lg ${theme.subtleBg} border ${theme.border} text-sm`}>
+            <h4 className={`font-bold text-lg mb-2 ${theme.textAccent}`}>Điểm Mạnh Của Tool</h4>
+            <ul className="list-disc list-inside space-y-1 opacity-90">
+              <li><b>Tự động hóa toàn diện:</b> Từ ý tưởng thô sơ đến kịch bản chi tiết, SEO, và Prompt hình ảnh chỉ trong vài cú click.</li>
+              <li><b>Đa ngôn ngữ & Thị trường:</b> Hỗ trợ tạo nội dung thuần Việt hoặc chuyển đổi sang tiếng Anh (US) chuẩn bản ngữ để đánh thị trường Global.</li>
+              <li><b>Cơ chế API thông minh:</b> Tự động xoay vòng (Round-Robin) và chuyển đổi API Key dự phòng (Fail-over) giúp quá trình tạo không bị gián đoạn.</li>
+              <li><b>Kiểm soát chất lượng:</b> Tùy chỉnh chi tiết về thời lượng, số chương, và tỷ lệ khung hình video.</li>
+            </ul>
+          </div>
+
+          <div>
+            <h4 className={`font-bold text-lg mb-3 ${theme.textAccent} border-b ${theme.border} pb-2`}>Quy trình làm việc (Workflow)</h4>
+            <div className="space-y-4 text-sm">
+              <div className="flex gap-3">
+                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>1</div>
+                <div>
+                  <div className="font-semibold">Cấu hình & Đầu vào</div>
+                  <p className="opacity-80 mt-1">Nhập API Key (Gemini/ChatGPT). Sau đó điền Tên sách, Ý tưởng chủ đạo và các thông số (Thời lượng, Số chương) tại <b>Mục 1</b>.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>2</div>
+                <div>
+                  <div className="font-semibold">Lên Sườn Bài (Outline)</div>
+                  <p className="opacity-80 mt-1">Nhấn <b>"Phân tích & Tạo sườn"</b>. AI sẽ phân tích chủ đề và đưa ra cấu trúc chương hồi logic, kịch tính tại <b>Mục 3</b>.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>3</div>
+                <div>
+                  <div className="font-semibold">Viết Nội Dung Chi Tiết</div>
+                  <p className="opacity-80 mt-1">Nhấn <b>"Viết Truyện (Theo sườn)"</b>. Hệ thống sẽ lần lượt viết chi tiết từng chương dựa trên dàn ý đã duyệt. Kết quả hiện tại <b>Mục 4</b>.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>4</div>
+                <div>
+                  <div className="font-semibold">Chuyển Thể Audio Script</div>
+                  <p className="opacity-80 mt-1">Nhấn <b>"Review Truyện"</b>. AI sẽ đóng vai MC/Reviewer để viết lại nội dung thành lời dẫn hấp dẫn, phù hợp để thu âm (TTS) tại <b>Mục 5</b>.</p>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>5</div>
+                <div>
+                  <div className="font-semibold">Đóng Gói & Xuất Bản</div>
+                  <p className="opacity-80 mt-1">Cuối cùng, dùng <b>"Tạo SEO"</b> để lấy Title/Description cho YouTube và <b>"Tạo Prompt"</b> để lấy lệnh vẽ hình minh họa Midjourney/Stable Diffusion.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="pt-2">
+            <button onClick={() => setIsGuideModalOpen(false)} className={`w-full py-2 rounded font-semibold ${theme.buttonPrimary} text-white`}>
+              Đã hiểu, bắt đầu ngay!
+            </button>
+          </div>
+
+        </div>
+      </Modal>
+
+      {/* Advanced Config Modal (Cover, Channel, MC) */}
+      <Modal 
+        isOpen={isExtraConfigModalOpen} 
+        onClose={handleSaveExtraConfig} 
+        title="Cấu hình nâng cao"
+      >
+         <div className="space-y-4">
+            <div className={`p-3 rounded-lg ${theme.bgCard}/50 border border-yellow-800/50 text-sm text-yellow-500`}>
+              Thông tin dưới đây sẽ giúp AI cá nhân hóa nội dung tốt hơn (Ví dụ: Chào hỏi tên Kênh, xưng tên MC).
+            </div>
+
+            <div>
+              <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Tên Kênh (Channel Name)</label>
+              <input value={channelName} onChange={(e) => setChannelName(e.target.value)} placeholder="VD: Sách Hay Mỗi Ngày..." className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 outline-none transition-colors`} />
+            </div>
+
+            <div>
+              <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Tên MC / Người dẫn (Host Name)</label>
+              <input value={mcName} onChange={(e) => setMcName(e.target.value)} placeholder="VD: Minh Hạnh..." className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 outline-none transition-colors`} />
+            </div>
+
+            <div className="border-t border-dashed border-gray-700 pt-4">
+               <label className={`block text-sm font-medium ${theme.textAccent} mb-1`}>Tải ảnh bìa (Tùy chọn)</label>
+               <input type="file" accept="image/*" onChange={handleFileUpload} className={`w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold ${theme.bgButton} ${theme.textHighlight} hover:file:${theme.bgCard}`} />
+               {bookImage && <img src={bookImage} alt="cover" className={`mt-2 w-full max-w-xs mx-auto rounded-lg border ${theme.border}`} />}
+            </div>
+
+            <div className="pt-2">
+               <button onClick={handleSaveExtraConfig} className={`w-full py-2 rounded font-semibold ${theme.buttonPrimary} text-white`}>
+                 Lưu & Đóng
+               </button>
+            </div>
+         </div>
       </Modal>
     </div>
   );
