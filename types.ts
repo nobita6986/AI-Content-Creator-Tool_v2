@@ -35,3 +35,21 @@ export interface LoadingStates {
   script: boolean;
   prompts: boolean;
 }
+
+export interface SavedSession {
+  id: string;
+  lastModified: number;
+  bookTitle: string;
+  language: Language;
+  bookIdea: string;
+  bookImage: string | null;
+  durationMin: number;
+  chaptersCount: number;
+  frameRatio: string;
+  outline: OutlineItem[];
+  storyBlocks: StoryBlock[];
+  scriptBlocks: ScriptBlock[];
+  seo: SEOResult | null;
+  videoPrompts: string[];
+  thumbTextIdeas: string[];
+}

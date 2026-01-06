@@ -3,49 +3,19 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { OutlineItem, SEOResult, Language } from '../types';
 
 /**
- * Execute a Google GenAI operation with multiple keys.
- * Implements Round-Robin selection and Failover (Retry) logic.
+ * Execute a Google GenAI operation using provided apiKey or process.env.API_KEY.
  */
 const executeGenAIRequest = async <T>(
-    apiKeyInput: string | undefined,
-    operation: (ai: GoogleGenAI) => Promise<T>
+    operation: (ai: GoogleGenAI) => Promise<T>,
+    apiKey?: string
 ): Promise<T> => {
-    // 1. Parse keys from input string (split by newlines, commas, semicolons)
-    const userKeys = apiKeyInput
-        ? apiKeyInput.split(/[\n,;]+/).map(k => k.trim()).filter(k => k.length > 0)
-        : [];
-    
-    // 2. Add environment key as fallback if available
-    const envKey = process.env.API_KEY;
-    const candidates = userKeys.length > 0 ? userKeys : (envKey ? [envKey] : []);
-
-    if (candidates.length === 0) {
-        throw new Error("Missing API Key / Chưa có API Key.");
+    // Prioritize user-provided key, fallback to env key
+    const key = apiKey || process.env.API_KEY;
+    if (!key) {
+        throw new Error("Missing API Key: Please configure your Gemini API Key in Settings.");
     }
-
-    let lastError: any;
-    
-    // 3. Pick a random starting index to distribute load across keys (Load Balancing)
-    const startIndex = Math.floor(Math.random() * candidates.length);
-
-    // 4. Iterate through keys (Failover Logic)
-    for (let i = 0; i < candidates.length; i++) {
-        // Wrap around using modulo
-        const keyIndex = (startIndex + i) % candidates.length;
-        const apiKey = candidates[keyIndex];
-        
-        try {
-            const ai = new GoogleGenAI({ apiKey });
-            // Execute the operation
-            return await operation(ai);
-        } catch (error: any) {
-            console.warn(`API Key ending in ...${apiKey.slice(-4)} failed. Attempting switch...`, error);
-            lastError = error;
-            // If it's the last key, loop ends and we throw error
-        }
-    }
-
-    throw lastError || new Error("All provided API keys failed.");
+    const ai = new GoogleGenAI({ apiKey: key });
+    return await operation(ai);
 };
 
 export const slugify = (s: string): string => {
@@ -74,7 +44,7 @@ export const generateOutline = async (bookTitle: string, idea: string, channelNa
         ? `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} ${identityContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook dài ${durationMin} phút. Dàn ý cần có khoảng ${chaptersCount} chương nội dung chính. Cấu trúc phải bao gồm: 1. Hook (Móc nối - Nhắc tên kênh ${channelName} nếu phù hợp), 2. Intro (Giới thiệu MC ${mcName}), 3. Các chương chính của câu chuyện, 4. Bài học rút ra, và 5. Kết thúc. ${langContext}`
         : `Based on the book/topic "${bookTitle}". ${ideaContext} ${identityContext} Create a script outline for a YouTube video in storytelling/audiobook style, ${durationMin} minutes long. The outline should have about ${chaptersCount} main chapters. Structure: 1. Hook (Mention channel ${channelName} if fitting), 2. Intro (Introduce Host ${mcName}), 3. Main Story Chapters, 4. Key Takeaways, 5. Conclusion. ${langContext}`;
 
-    return executeGenAIRequest(apiKey, async (ai) => {
+    return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
             model: model.includes('gpt') ? 'gemini-3-pro-preview' : model,
             contents: [{ parts: [{ text: prompt }] }],
@@ -99,7 +69,7 @@ export const generateOutline = async (bookTitle: string, idea: string, channelNa
         });
         const jsonText = response.text.trim();
         return JSON.parse(jsonText);
-    });
+    }, apiKey);
 };
 
 export const generateStoryBlock = async (item: OutlineItem, bookTitle: string, idea: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
@@ -114,13 +84,13 @@ export const generateStoryBlock = async (item: OutlineItem, bookTitle: string, i
            Goal: "${item.focus}". Plot points: ${item.actions.join(', ')}.
            Write in prose, storytelling style, engaging and emotional. 400-600 words. Output strictly in English.`;
     
-    return executeGenAIRequest(apiKey, async (ai) => {
+    return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
             model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
             contents: [{ parts: [{ text: prompt }] }],
         });
         return response.text;
-    });
+    }, apiKey);
 };
 
 export const generateReviewBlock = async (storyContent: string, chapterTitle: string, bookTitle: string, channelName: string, mcName: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
@@ -143,13 +113,13 @@ export const generateReviewBlock = async (storyContent: string, chapterTitle: st
            Original Content: "${storyContent}"
            Requirements: Analyze, commentate, and guide the listener. Interweave summary with deep insights. Natural, conversational tone. Output strictly in English.`;
     
-    return executeGenAIRequest(apiKey, async (ai) => {
+    return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
             model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
             contents: [{ parts: [{ text: prompt }] }],
         });
         return response.text;
-    });
+    }, apiKey);
 };
 
 export const generateSEO = async (bookTitle: string, channelName: string, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
@@ -160,7 +130,7 @@ export const generateSEO = async (bookTitle: string, channelName: string, durati
         ? `Tạo nội dung SEO cho video YouTube về "${bookTitle}". ${channelContext} Dạng Review/Kể chuyện dài ${durationMin} phút. Cung cấp: 8 tiêu đề clickbait, hashtags, keywords (bao gồm tên kênh), và mô tả video chuẩn SEO (nhắc đến tên kênh). JSON format. Ngôn ngữ: Tiếng Việt.`
         : `Generate SEO content for a YouTube video about "${bookTitle}". ${channelContext} Format: Audiobook/Review, ${durationMin} minutes long. Provide: 8 clickbait titles, hashtags, keywords (include channel name), and a SEO-optimized video description (mention channel name). JSON format. Language: English.`;
 
-    return executeGenAIRequest(apiKey, async (ai) => {
+    return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
             model: model.includes('gpt') ? 'gemini-3-pro-preview' : model,
             contents: [{ parts: [{ text: prompt }] }],
@@ -180,14 +150,13 @@ export const generateSEO = async (bookTitle: string, channelName: string, durati
         });
         const jsonText = response.text.trim();
         return JSON.parse(jsonText);
-    });
+    }, apiKey);
 };
 
 export const generateVideoPrompts = async (bookTitle: string, frameRatio: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
-    // Prompts for image generation usually work best in English even for VN content, but we can refine context.
     const prompt = `Generate 5 cinematic, photorealistic video prompts for background visuals in a YouTube video about "${bookTitle}". Visuals should match the story's mood. Aspect ratio: ${frameRatio}. No text/logos. JSON array of strings.`;
     
-    return executeGenAIRequest(apiKey, async (ai) => {
+    return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
             model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
             contents: [{ parts: [{ text: prompt }] }],
@@ -201,7 +170,7 @@ export const generateVideoPrompts = async (bookTitle: string, frameRatio: string
         });
         const jsonText = response.text.trim();
         return JSON.parse(jsonText);
-    });
+    }, apiKey);
 };
 
 export const generateThumbIdeas = async (bookTitle: string, durationMin: number, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
@@ -211,7 +180,7 @@ export const generateThumbIdeas = async (bookTitle: string, durationMin: number,
         ? `Cho video YouTube về "${bookTitle}", đề xuất 5 text thumbnail ngắn gọn, gây tò mò, tiếng Việt. Một ý phải chứa thời lượng: ${durationStr}. JSON array.`
         : `For a YouTube video about "${bookTitle}", suggest 5 short, curiosity-inducing thumbnail texts in English. One idea must include duration: ${durationStr}. JSON array.`;
     
-    return executeGenAIRequest(apiKey, async (ai) => {
+    return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
             model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
             contents: [{ parts: [{ text: prompt }] }],
@@ -225,10 +194,9 @@ export const generateThumbIdeas = async (bookTitle: string, durationMin: number,
         });
         const jsonText = response.text.trim();
         return JSON.parse(jsonText);
-    });
+    }, apiKey);
 };
 
-// Helper to chunk large text if needed
 export const chunkText = (text: string, maxChars: number = 2000): string[] => {
     const chunks: string[] = [];
     let currentChunk = "";

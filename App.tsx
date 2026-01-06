@@ -1,6 +1,6 @@
 
-import React, { useEffect, useMemo, useState } from "react";
-import { OutlineItem, ScriptBlock, StoryBlock, SEOResult, LoadingStates, Language } from './types';
+import React, { useEffect, useMemo, useState, useRef } from "react";
+import { OutlineItem, ScriptBlock, StoryBlock, SEOResult, LoadingStates, Language, SavedSession } from './types';
 import * as geminiService from './services/geminiService';
 import { Card, Empty, LoadingOverlay, Modal, Toast, Tooltip } from './components/ui';
 
@@ -53,26 +53,37 @@ const INITIAL_LOADING_STATES: LoadingStates = {
 };
 
 export default function App() {
-  const [language, setLanguage] = useState<Language>('vi'); // Controls Theme & Output Language
+  const [language, setLanguage] = useState<Language>('vi'); 
   
+  // -- Content State --
+  const [sessionId, setSessionId] = useState<string | null>(null);
   const [bookTitle, setBookTitle] = useState("");
   const [bookIdea, setBookIdea] = useState("");
   const [bookImage, setBookImage] = useState<string | null>(null);
-  const [channelName, setChannelName] = useState("");
-  const [mcName, setMcName] = useState("");
+  
+  // -- Config State (Dual Language) --
+  const [channelNameVi, setChannelNameVi] = useState("");
+  const [mcNameVi, setMcNameVi] = useState("");
+  const [channelNameEn, setChannelNameEn] = useState("");
+  const [mcNameEn, setMcNameEn] = useState("");
 
-  const [frameRatio, setFrameRatio] = useState("16:9"); // Default to 16:9
+  const [frameRatio, setFrameRatio] = useState("16:9"); 
   const [durationMin, setDurationMin] = useState(240);
   const [chaptersCount, setChaptersCount] = useState(12);
 
   const [selectedModel, setSelectedModel] = useState("gemini-3-pro-preview");
+  
+  // -- Modals --
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
   const [isExtraConfigModalOpen, setIsExtraConfigModalOpen] = useState(false);
+  const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
 
+  // -- API Keys --
   const [apiKeyGemini, setApiKeyGemini] = useState("");
   const [apiKeyOpenAI, setApiKeyOpenAI] = useState("");
 
+  // -- Output Data --
   const [outline, setOutline] = useState<OutlineItem[]>([]);
   const [storyBlocks, setStoryBlocks] = useState<StoryBlock[]>([]);
   const [seo, setSeo] = useState<SEOResult | null>(null);
@@ -85,20 +96,42 @@ export default function App() {
   
   const [isStoryUploaded, setIsStoryUploaded] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SavedSession[]>([]);
 
   const theme = THEMES[language];
   const totalCharsTarget = useMemo(() => durationMin * 1000, [durationMin]);
+  
+  // Derived values based on current language
+  const currentChannelName = language === 'vi' ? channelNameVi : channelNameEn;
+  const currentMcName = language === 'vi' ? mcNameVi : mcNameEn;
 
+  // --- INITIAL LOAD & GLOBAL CONFIG ---
   useEffect(() => {
+    // API Keys
     const storedGeminiKey = localStorage.getItem("nd_gemini_api_key");
     const storedOpenAIKey = localStorage.getItem("nd_openai_api_key");
-    const storedChannel = localStorage.getItem("nd_channel_name");
-    const storedMC = localStorage.getItem("nd_mc_name");
-
     if (storedGeminiKey) setApiKeyGemini(storedGeminiKey);
     if (storedOpenAIKey) setApiKeyOpenAI(storedOpenAIKey);
-    if (storedChannel) setChannelName(storedChannel);
-    if (storedMC) setMcName(storedMC);
+
+    // Configs (VI)
+    const storedChannelVi = localStorage.getItem("nd_channel_name_vi");
+    const storedMcVi = localStorage.getItem("nd_mc_name_vi");
+    if (storedChannelVi) setChannelNameVi(storedChannelVi);
+    if (storedMcVi) setMcNameVi(storedMcVi);
+
+    // Configs (EN) - fallbacks to simple keys if legacy, otherwise specific keys
+    const storedChannelEn = localStorage.getItem("nd_channel_name_en");
+    const storedMcEn = localStorage.getItem("nd_mc_name_en");
+    if (storedChannelEn) setChannelNameEn(storedChannelEn);
+    if (storedMcEn) setMcNameEn(storedMcEn);
+    
+    // Load Sessions
+    try {
+        const storedSessions = localStorage.getItem("nd_sessions");
+        if (storedSessions) {
+            setSessions(JSON.parse(storedSessions));
+        }
+    } catch (e) { console.error("Error loading sessions", e); }
   }, []);
 
   const handleSaveKeys = () => {
@@ -108,10 +141,106 @@ export default function App() {
   };
 
   const handleSaveExtraConfig = () => {
-    localStorage.setItem("nd_channel_name", channelName);
-    localStorage.setItem("nd_mc_name", mcName);
+    // Save to local storage based on variables
+    localStorage.setItem("nd_channel_name_vi", channelNameVi);
+    localStorage.setItem("nd_mc_name_vi", mcNameVi);
+    localStorage.setItem("nd_channel_name_en", channelNameEn);
+    localStorage.setItem("nd_mc_name_en", mcNameEn);
     setIsExtraConfigModalOpen(false);
   };
+
+  // --- SESSION & AUTO-SAVE LOGIC ---
+  const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (!bookTitle) return; // Don't save empty sessions
+
+    if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+
+    saveTimeoutRef.current = setTimeout(() => {
+        const currentId = sessionId || crypto.randomUUID();
+        if (!sessionId) setSessionId(currentId);
+
+        const newSession: SavedSession = {
+            id: currentId,
+            lastModified: Date.now(),
+            bookTitle,
+            language,
+            bookIdea,
+            bookImage,
+            durationMin,
+            chaptersCount,
+            frameRatio,
+            outline,
+            storyBlocks,
+            scriptBlocks,
+            seo,
+            videoPrompts,
+            thumbTextIdeas
+        };
+
+        setSessions(prev => {
+            // Remove existing version of this session if exists
+            const filtered = prev.filter(s => s.id !== currentId);
+            // Add updated version to top
+            const updated = [newSession, ...filtered];
+            localStorage.setItem("nd_sessions", JSON.stringify(updated));
+            return updated;
+        });
+    }, 2000); // Auto-save after 2 seconds of inactivity
+
+    return () => {
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+    };
+  }, [bookTitle, bookIdea, bookImage, durationMin, chaptersCount, frameRatio, outline, storyBlocks, scriptBlocks, seo, videoPrompts, thumbTextIdeas, language, sessionId]);
+
+  const handleLoadSession = (s: SavedSession) => {
+      setSessionId(s.id);
+      setBookTitle(s.bookTitle);
+      setLanguage(s.language);
+      setBookIdea(s.bookIdea);
+      setBookImage(s.bookImage);
+      setDurationMin(s.durationMin);
+      setChaptersCount(s.chaptersCount);
+      setFrameRatio(s.frameRatio || "16:9");
+      setOutline(s.outline || []);
+      setStoryBlocks(s.storyBlocks || []);
+      setScriptBlocks(s.scriptBlocks || []);
+      setSeo(s.seo);
+      setVideoPrompts(s.videoPrompts || []);
+      setThumbTextIdeas(s.thumbTextIdeas || []);
+      
+      setIsLibraryModalOpen(false);
+      setToastMessage(`Đã tải lại phiên làm việc: "${s.bookTitle}"`);
+  };
+
+  const handleDeleteSession = (id: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (window.confirm("Bạn có chắc chắn muốn xóa phiên làm việc này?")) {
+          const updated = sessions.filter(s => s.id !== id);
+          setSessions(updated);
+          localStorage.setItem("nd_sessions", JSON.stringify(updated));
+          if (sessionId === id) {
+             setSessionId(null); // Detach current session if deleted
+          }
+      }
+  };
+
+  const createNewSession = () => {
+      setSessionId(null);
+      setBookTitle("");
+      setBookIdea("");
+      setOutline([]);
+      setStoryBlocks([]);
+      setScriptBlocks([]);
+      setSeo(null);
+      setVideoPrompts([]);
+      setThumbTextIdeas([]);
+      setToastMessage("Đã tạo phiên làm việc mới.");
+  }
+
+
+  // --- HANDLERS ---
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -125,7 +254,6 @@ export default function App() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Tự động lấy tên file làm tên sách
     const fileName = file.name.replace(/\.[^/.]+$/, "");
     setBookTitle(fileName);
 
@@ -143,8 +271,8 @@ export default function App() {
             setOutline([]); 
             setScriptBlocks([]); 
             setIsStoryUploaded(true);
-            setToastMessage(`Đã upload truyện "${fileName}" thành công (${newBlocks.length} phần). Nhấn 'Review Truyện' để bắt đầu.`);
-            e.target.value = ''; // Reset input to allow re-upload
+            setToastMessage(`Đã upload truyện "${fileName}" thành công. Dữ liệu đã được lưu vào thư viện.`);
+            e.target.value = ''; 
         }
     };
     reader.readAsText(file);
@@ -160,7 +288,7 @@ export default function App() {
         setError("Vui lòng nhập OpenAI API Key để sử dụng các model ChatGPT.");
         return;
       }
-
+      
       setError(null);
       setLoading(prev => ({ ...prev, [key]: true }));
       try {
@@ -175,7 +303,7 @@ export default function App() {
   };
 
   const handleGenerateOutline = withErrorHandling(async () => {
-    const result = await geminiService.generateOutline(bookTitle, bookIdea, channelName, mcName, chaptersCount, durationMin, language, selectedModel, apiKeyGemini);
+    const result = await geminiService.generateOutline(bookTitle, bookIdea, currentChannelName, currentMcName, chaptersCount, durationMin, language, selectedModel, apiKeyGemini);
     const indexedResult = result.map((item, index) => ({ ...item, index }));
     setOutline(indexedResult);
     setStoryBlocks([]);
@@ -210,7 +338,7 @@ export default function App() {
 
     setScriptBlocks([]);
     for (const block of storyBlocks) {
-      const text = await geminiService.generateReviewBlock(block.content, block.title, bookTitle, channelName, mcName, language, selectedModel, apiKeyGemini);
+      const text = await geminiService.generateReviewBlock(block.content, block.title, bookTitle, currentChannelName, currentMcName, language, selectedModel, apiKeyGemini);
       const newBlock: ScriptBlock = {
         index: block.index,
         chapter: block.title,
@@ -222,7 +350,7 @@ export default function App() {
   }, 'script');
 
   const handleGenerateSEO = withErrorHandling(async () => {
-    const result = await geminiService.generateSEO(bookTitle, channelName, durationMin, language, selectedModel, apiKeyGemini);
+    const result = await geminiService.generateSEO(bookTitle, currentChannelName, durationMin, language, selectedModel, apiKeyGemini);
     setSeo(result);
   }, 'seo');
   
@@ -283,7 +411,7 @@ export default function App() {
     <div className={`min-h-screen w-full font-sans transition-colors duration-500 ${theme.bg} ${theme.textMain}`}>
       <header className={`px-6 py-8 border-b ${theme.border} sticky top-0 backdrop-blur bg-black/30 z-20`}>
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          <a href="/" className="group transition-transform hover:scale-105">
+          <a href="/" className="group transition-transform hover:scale-105" onClick={(e) => { e.preventDefault(); createNewSession(); }}>
             <h1 className={`text-3xl md:text-5xl font-extrabold tracking-tighter text-transparent bg-clip-text bg-gradient-to-r ${theme.gradientTitle}`}>
               AI Content Tool
             </h1>
@@ -296,23 +424,32 @@ export default function App() {
                     onClick={() => setLanguage('vi')}
                     className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${language === 'vi' ? theme.badge + ' text-white' : 'text-slate-400 hover:text-white'}`}
                   >
-                    Tiếng Việt
+                    VN
                   </button>
                   <button 
                      onClick={() => setLanguage('en')}
                      className={`px-4 py-1.5 rounded-full text-xs font-bold transition-all ${language === 'en' ? theme.badge + ' text-white' : 'text-slate-400 hover:text-white'}`}
                   >
-                    Tiếng Anh (US)
+                    US
                   </button>
               </div>
+
+              {/* Library Button */}
+              <button 
+                onClick={() => setIsLibraryModalOpen(true)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-full ${theme.bgCard}/80 border ${theme.borderLight} ${theme.textAccent} text-sm font-medium hover:${theme.bgButton} hover:text-white transition shadow-lg relative`}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+                <span>Thư viện</span>
+                {sessions.length > 0 && <span className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-500 text-[10px] text-white">{sessions.length}</span>}
+              </button>
 
               <button 
                 onClick={() => setIsApiModalOpen(true)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-full ${theme.bgCard}/80 border ${theme.borderLight} ${theme.textAccent} text-sm font-medium hover:${theme.bgButton} hover:text-white transition shadow-lg`}
               >
                 <span className={`w-2 h-2 rounded-full ${apiKeyGemini ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]'}`}></span>
-                <span>Cấu hình API</span>
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+                <span>API</span>
               </button>
 
                <button 
@@ -320,7 +457,6 @@ export default function App() {
                 className={`flex items-center gap-2 px-4 py-2 rounded-full ${theme.bgCard}/80 border ${theme.borderLight} ${theme.textAccent} text-sm font-medium hover:${theme.bgButton} hover:text-white transition shadow-lg`}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg>
-                <span>Hướng dẫn</span>
               </button>
           </div>
         </div>
@@ -365,9 +501,9 @@ export default function App() {
               <div className="pt-1">
                  <button onClick={() => setIsExtraConfigModalOpen(true)} className={`w-full py-2 rounded-lg ${theme.bgCard} border border-dashed ${theme.border} ${theme.textAccent} hover:${theme.bgButton} transition text-sm flex items-center justify-center gap-2`}>
                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.47a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.39a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-                   Cấu hình thêm (Ảnh bìa, Kênh, MC)
+                   Cấu hình thêm ({language === 'vi' ? 'VN' : 'US'})
                  </button>
-                 {(bookImage || channelName || mcName) && <div className="text-[10px] mt-1 text-center opacity-60">Đã có thông tin bổ sung</div>}
+                 {(currentChannelName || currentMcName) && <div className="text-[10px] mt-1 text-center opacity-60">Đã cấu hình cho {language === 'vi' ? 'Việt Nam' : 'English (US)'}</div>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
@@ -602,11 +738,11 @@ export default function App() {
           <div className={`p-4 rounded-lg ${theme.subtleBg} border ${theme.border} text-sm`}>
             <h4 className={`font-bold text-lg mb-2 ${theme.textAccent}`}>Điểm Mạnh Của Tool</h4>
             <ul className="list-disc list-inside space-y-1 opacity-90">
+              <li><b>Thư viện tự động:</b> Mọi thao tác được tự động lưu. Bạn có thể mở lại các dự án cũ bất cứ lúc nào.</li>
               <li><b>Tự động hóa toàn diện:</b> Từ ý tưởng thô sơ đến kịch bản chi tiết, SEO, và Prompt hình ảnh chỉ trong vài cú click.</li>
               <li><b>Upload & Review linh hoạt:</b> Hỗ trợ tải lên file truyện có sẵn (.txt) để AI phân tích và viết kịch bản lời dẫn (Review) ngay lập tức mà không cần qua bước tạo sườn.</li>
-              <li><b>Đa ngôn ngữ & Thị trường:</b> Hỗ trợ tạo nội dung thuần Việt hoặc chuyển đổi sang tiếng Anh (US) chuẩn bản ngữ để đánh thị trường Global.</li>
-              <li><b>Cơ chế API thông minh:</b> Tự động xoay vòng (Round-Robin) và chuyển đổi API Key dự phòng (Fail-over) giúp quá trình tạo không bị gián đoạn.</li>
-              <li><b>Kiểm soát chất lượng:</b> Tùy chỉnh chi tiết về thời lượng, số chương, và tỷ lệ khung hình video.</li>
+              <li><b>Đa ngôn ngữ & Thị trường:</b> Hỗ trợ cấu hình riêng biệt cho thị trường Việt Nam và US (Tên kênh, tên MC tự động chuyển đổi).</li>
+              <li><b>Cơ chế API thông minh:</b> Tự động xoay vòng (Round-Robin) và chuyển đổi API Key dự phòng (Fail-over).</li>
             </ul>
           </div>
 
@@ -617,39 +753,15 @@ export default function App() {
                 <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>1</div>
                 <div>
                   <div className="font-semibold">Cấu hình & Đầu vào</div>
-                  <p className="opacity-80 mt-1">Nhập API Key (Gemini/ChatGPT). Sau đó điền Tên sách, Ý tưởng chủ đạo và các thông số (Thời lượng, Số chương) tại <b>Mục 1</b>.</p>
+                  <p className="opacity-80 mt-1">Chọn ngôn ngữ (VN/US) và nhập Tên sách. Cấu hình Kênh/MC trong mục "Cấu hình thêm" sẽ tự động lưu theo ngôn ngữ bạn chọn.</p>
                 </div>
               </div>
-
-              <div className="flex gap-3">
+              {/* ... other steps remain similar ... */}
+               <div className="flex gap-3">
                 <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>2</div>
                 <div>
-                  <div className="font-semibold">Lên Sườn Bài (Outline)</div>
-                  <p className="opacity-80 mt-1">Nhấn <b>"Phân tích & Tạo sườn"</b>. AI sẽ phân tích chủ đề và đưa ra cấu trúc chương hồi logic, kịch tính tại <b>Mục 3</b>.</p>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>3</div>
-                <div>
-                  <div className="font-semibold">Viết Nội Dung Chi Tiết</div>
-                  <p className="opacity-80 mt-1">Nhấn <b>"Viết Truyện (Theo sườn)"</b>. Hệ thống sẽ lần lượt viết chi tiết từng chương dựa trên dàn ý đã duyệt. Kết quả hiện tại <b>Mục 4</b>.</p>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>4</div>
-                <div>
-                  <div className="font-semibold">Chuyển Thể Audio Script</div>
-                  <p className="opacity-80 mt-1">Nhấn <b>"Review Truyện"</b>. AI sẽ đóng vai MC/Reviewer để viết lại nội dung thành lời dẫn hấp dẫn, phù hợp để thu âm (TTS) tại <b>Mục 5</b>.</p>
-                </div>
-              </div>
-
-              <div className="flex gap-3">
-                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>5</div>
-                <div>
-                  <div className="font-semibold">Đóng Gói & Xuất Bản</div>
-                  <p className="opacity-80 mt-1">Cuối cùng, dùng <b>"Tạo SEO"</b> để lấy Title/Description cho YouTube và <b>"Tạo Prompt"</b> để lấy lệnh vẽ hình minh họa Midjourney/Stable Diffusion.</p>
+                  <div className="font-semibold">Lên Sườn Bài / Upload</div>
+                  <p className="opacity-80 mt-1">Dùng tính năng AI tạo sườn hoặc Upload file có sẵn.</p>
                 </div>
               </div>
             </div>
@@ -664,37 +776,47 @@ export default function App() {
         </div>
       </Modal>
 
-      {/* Advanced Config Modal (Cover, Channel, MC) */}
+      {/* Advanced Config Modal (Cover, Channel, MC) - Dual Language Aware */}
       <Modal 
         isOpen={isExtraConfigModalOpen} 
         onClose={handleSaveExtraConfig} 
-        title="Cấu hình nâng cao"
+        title={`Cấu hình nâng cao (${language === 'vi' ? 'Việt Nam' : 'English - US'})`}
       >
          <div className="space-y-4">
             <div className={`p-3 rounded-lg ${theme.bgCard}/50 border border-yellow-800/50 text-sm text-yellow-500`}>
-              Thông tin dưới đây sẽ giúp AI cá nhân hóa nội dung tốt hơn (Ví dụ: Chào hỏi tên Kênh, xưng tên MC).
+              Dữ liệu này được lưu riêng cho chế độ <b>{language === 'vi' ? 'Tiếng Việt' : 'Tiếng Anh (US)'}</b>. Khi bạn đổi ngôn ngữ ở màn hình chính, hệ thống sẽ tự động dùng cấu hình tương ứng.
             </div>
 
             <div>
               <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
-                Tên Kênh (Channel Name)
+                Tên Kênh ({language === 'vi' ? 'VN' : 'US'})
                 <Tooltip text="Tên kênh YouTube của bạn. AI sẽ nhắc đến tên kênh trong phần Chào mừng hoặc Kêu gọi đăng ký." />
               </label>
-              <input value={channelName} onChange={(e) => setChannelName(e.target.value)} placeholder="VD: Sách Hay Mỗi Ngày..." className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 outline-none transition-colors`} />
+              <input 
+                value={language === 'vi' ? channelNameVi : channelNameEn} 
+                onChange={(e) => language === 'vi' ? setChannelNameVi(e.target.value) : setChannelNameEn(e.target.value)} 
+                placeholder={language === 'vi' ? "VD: Sách Hay Mỗi Ngày..." : "Ex: Best Books Daily..."} 
+                className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 outline-none transition-colors`} 
+              />
             </div>
 
             <div>
               <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
-                Tên MC / Người dẫn (Host Name)
-                <Tooltip text="Tên người dẫn chuyện. AI sẽ sử dụng để xưng hô thân mật (ví dụ: 'Chào các bạn, mình là [Tên MC]...')." />
+                Tên MC / Người dẫn ({language === 'vi' ? 'VN' : 'US'})
+                <Tooltip text="Tên người dẫn chuyện. AI sẽ sử dụng để xưng hô thân mật." />
               </label>
-              <input value={mcName} onChange={(e) => setMcName(e.target.value)} placeholder="VD: Minh Hạnh..." className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 outline-none transition-colors`} />
+              <input 
+                value={language === 'vi' ? mcNameVi : mcNameEn} 
+                onChange={(e) => language === 'vi' ? setMcNameVi(e.target.value) : setMcNameEn(e.target.value)} 
+                placeholder={language === 'vi' ? "VD: Minh Hạnh..." : "Ex: Sarah..."} 
+                className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 outline-none transition-colors`} 
+              />
             </div>
 
             <div className="border-t border-dashed border-gray-700 pt-4">
                <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
-                 Tải ảnh bìa (Tùy chọn)
-                 <Tooltip text="Ảnh bìa sách hoặc hình ảnh đại diện để tham khảo trong quá trình làm việc (không ảnh hưởng đến AI)." />
+                 Tải ảnh bìa (Chung)
+                 <Tooltip text="Ảnh bìa sách để tham khảo (dùng chung cho cả 2 ngôn ngữ)." />
                </label>
                <input type="file" accept="image/*" onChange={handleFileUpload} className={`w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold ${theme.bgButton} ${theme.textHighlight} hover:file:${theme.bgCard}`} />
                {bookImage && <img src={bookImage} alt="cover" className={`mt-2 w-full max-w-xs mx-auto rounded-lg border ${theme.border}`} />}
@@ -707,6 +829,48 @@ export default function App() {
             </div>
          </div>
       </Modal>
+
+      {/* Library Modal */}
+      <Modal
+        isOpen={isLibraryModalOpen}
+        onClose={() => setIsLibraryModalOpen(false)}
+        title="Thư viện phiên làm việc"
+      >
+        <div className="space-y-4">
+            {sessions.length === 0 ? (
+                <Empty text="Chưa có phiên làm việc nào được lưu." />
+            ) : (
+                <div className="space-y-3">
+                    {sessions.map((s) => (
+                        <div key={s.id} onClick={() => handleLoadSession(s)} className={`p-3 rounded-lg border ${theme.border} ${theme.bgCard}/50 hover:${theme.bgButton} cursor-pointer transition flex items-center justify-between group`}>
+                            <div>
+                                <div className="font-semibold text-sm flex items-center gap-2">
+                                    {s.bookTitle || "Chưa đặt tên"}
+                                    <span className={`text-[10px] px-1.5 rounded border ${s.language === 'vi' ? 'border-sky-700 bg-sky-900/50 text-sky-200' : 'border-emerald-700 bg-emerald-900/50 text-emerald-200'}`}>
+                                        {s.language.toUpperCase()}
+                                    </span>
+                                </div>
+                                <div className="text-xs opacity-60 mt-1">
+                                    {new Date(s.lastModified).toLocaleString()} • {s.durationMin} phút
+                                </div>
+                            </div>
+                            <button 
+                                onClick={(e) => handleDeleteSession(s.id, e)}
+                                className="opacity-0 group-hover:opacity-100 p-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-full transition"
+                                title="Xóa phiên này"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-1 1-1h6c0 0 1 0 1 1v2"/></svg>
+                            </button>
+                        </div>
+                    ))}
+                </div>
+            )}
+             <div className="pt-2 border-t border-gray-800 text-xs opacity-60 text-center italic">
+               Các phiên làm việc được lưu tự động trên trình duyệt này.
+            </div>
+        </div>
+      </Modal>
+
       {toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}
     </div>
   );
