@@ -1,6 +1,6 @@
 
 import { GoogleGenAI, Type } from "@google/genai";
-import { OutlineItem, SEOResult } from '../types';
+import { OutlineItem, SEOResult, Language } from '../types';
 
 /**
  * Execute a Google GenAI operation with multiple keys.
@@ -20,7 +20,7 @@ const executeGenAIRequest = async <T>(
     const candidates = userKeys.length > 0 ? userKeys : (envKey ? [envKey] : []);
 
     if (candidates.length === 0) {
-        throw new Error("Chưa có API Key. Vui lòng nhập API Key trong phần Quản lý API & Model.");
+        throw new Error("Missing API Key / Chưa có API Key.");
     }
 
     let lastError: any;
@@ -61,9 +61,17 @@ export const fileToBase64 = (file: File): Promise<string> => {
     });
 };
 
-export const generateOutline = async (bookTitle: string, idea: string, chaptersCount: number, durationMin: number, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<Omit<OutlineItem, 'index'>[]> => {
-    const ideaContext = idea ? `Kết hợp với ý tưởng/bối cảnh sau: "${idea}".` : "";
-    const prompt = `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook dài ${durationMin} phút. Dàn ý cần có khoảng ${chaptersCount} chương nội dung chính. Cấu trúc phải bao gồm: 1. Hook (Móc nối), 2. Intro, 3. Các chương chính của câu chuyện, 4. Bài học rút ra, và 5. Kết thúc. Với mỗi mục, cung cấp 'title' (tiêu đề), 'focus' (trọng tâm nội dung), và 3-4 'actions' (chi tiết chính). Trả lời JSON.`;
+export const generateOutline = async (bookTitle: string, idea: string, chaptersCount: number, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<Omit<OutlineItem, 'index'>[]> => {
+    const isVi = language === 'vi';
+    const langContext = isVi 
+        ? "Ngôn ngữ đầu ra: Tiếng Việt." 
+        : "Output Language: English (US). Tone: Professional, Engaging.";
+    
+    const ideaContext = idea ? (isVi ? `Kết hợp với ý tưởng/bối cảnh: "${idea}".` : `Incorporate this idea/context: "${idea}".`) : "";
+    
+    const prompt = isVi 
+        ? `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook dài ${durationMin} phút. Dàn ý cần có khoảng ${chaptersCount} chương nội dung chính. Cấu trúc phải bao gồm: 1. Hook (Móc nối), 2. Intro, 3. Các chương chính của câu chuyện, 4. Bài học rút ra, và 5. Kết thúc. ${langContext}`
+        : `Based on the book/topic "${bookTitle}". ${ideaContext} Create a script outline for a YouTube video in storytelling/audiobook style, ${durationMin} minutes long. The outline should have about ${chaptersCount} main chapters. Structure: 1. Hook, 2. Intro, 3. Main Story Chapters, 4. Key Takeaways, 5. Conclusion. ${langContext}`;
 
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -93,13 +101,17 @@ export const generateOutline = async (bookTitle: string, idea: string, chaptersC
     });
 };
 
-// NEW: Generate Story Content based on Outline
-export const generateStoryBlock = async (item: OutlineItem, bookTitle: string, idea: string, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
-    const ideaContext = idea ? `Lưu ý ý tưởng chủ đạo: "${idea}".` : "";
-    const prompt = `Bạn là một tiểu thuyết gia tài ba. Hãy viết nội dung chi tiết cho chương "${item.title}" của tác phẩm "${bookTitle}". ${ideaContext}
-    Mục tiêu chương này: "${item.focus}".
-    Các tình tiết chính: ${item.actions.join(', ')}.
-    Hãy viết dưới dạng văn xuôi, kể chuyện, văn phong lôi cuốn, giàu cảm xúc. Độ dài khoảng 400-600 từ. Chỉ trả về nội dung truyện, không bao gồm lời dẫn của AI.`;
+export const generateStoryBlock = async (item: OutlineItem, bookTitle: string, idea: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
+    const isVi = language === 'vi';
+    const ideaContext = idea ? (isVi ? `Lưu ý ý tưởng chủ đạo: "${idea}".` : `Note the core idea: "${idea}".`) : "";
+    
+    const prompt = isVi
+        ? `Bạn là một tiểu thuyết gia tài ba. Hãy viết nội dung chi tiết cho chương "${item.title}" của tác phẩm "${bookTitle}". ${ideaContext}
+           Mục tiêu: "${item.focus}". Tình tiết: ${item.actions.join(', ')}.
+           Viết dạng văn xuôi, kể chuyện, văn phong lôi cuốn, giàu cảm xúc. 400-600 từ. Chỉ trả về nội dung truyện tiếng Việt.`
+        : `You are a best-selling novelist. Write detailed content for the chapter "${item.title}" of the book/story "${bookTitle}". ${ideaContext}
+           Goal: "${item.focus}". Plot points: ${item.actions.join(', ')}.
+           Write in prose, storytelling style, engaging and emotional. 400-600 words. Output strictly in English.`;
     
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -110,19 +122,20 @@ export const generateStoryBlock = async (item: OutlineItem, bookTitle: string, i
     });
 };
 
-// UPDATED: Generate Review Script based on Story Content (instead of Outline)
-export const generateReviewBlock = async (storyContent: string, chapterTitle: string, bookTitle: string, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
-    const prompt = `Bạn là một Reviewer/MC kênh AudioBook nổi tiếng (giọng đọc trầm ấm, sâu sắc).
-    Nhiệm vụ: Viết lời dẫn/kịch bản Review cho phần nội dung sau của cuốn sách/truyện "${bookTitle}".
+export const generateReviewBlock = async (storyContent: string, chapterTitle: string, bookTitle: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string> => {
+    const isVi = language === 'vi';
     
-    Chương: "${chapterTitle}"
-    Nội dung gốc: "${storyContent}"
-    
-    Yêu cầu:
-    1. Không đọc lại y nguyên truyện. Hãy phân tích, bình luận, và dẫn dắt người nghe đi qua các tình tiết này.
-    2. Đan xen giữa kể lại tóm tắt và đưa ra bài học/cảm nhận sâu sắc.
-    3. Giọng văn tự nhiên, như đang trò chuyện với thính giả.
-    4. Trả lời bằng tiếng Việt.`;
+    const prompt = isVi
+        ? `Bạn là một Reviewer/MC kênh AudioBook nổi tiếng (giọng đọc trầm ấm, sâu sắc).
+           Nhiệm vụ: Viết lời dẫn/kịch bản Review cho phần nội dung sau của cuốn sách "${bookTitle}".
+           Chương: "${chapterTitle}"
+           Nội dung gốc: "${storyContent}"
+           Yêu cầu: Phân tích, bình luận, dẫn dắt. Đan xen tóm tắt và bài học. Giọng văn tự nhiên. Trả lời Tiếng Việt.`
+        : `You are a famous Audiobook Narrator/Reviewer (warm, insightful voice).
+           Task: Write a script/commentary review for the following content of the book "${bookTitle}".
+           Chapter: "${chapterTitle}"
+           Original Content: "${storyContent}"
+           Requirements: Analyze, commentate, and guide the listener. Interweave summary with deep insights. Natural, conversational tone. Output strictly in English.`;
     
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -133,8 +146,11 @@ export const generateReviewBlock = async (storyContent: string, chapterTitle: st
     });
 };
 
-export const generateSEO = async (bookTitle: string, durationMin: number, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
-    const prompt = `Tạo nội dung SEO cho video YouTube về "${bookTitle}". Video dạng Review/Kể chuyện dài ${durationMin} phút. Cung cấp: 8 tiêu đề clickbait/hấp dẫn, hashtags, keywords, và mô tả video chuẩn SEO. JSON format.`;
+export const generateSEO = async (bookTitle: string, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
+    const isVi = language === 'vi';
+    const prompt = isVi
+        ? `Tạo nội dung SEO cho video YouTube về "${bookTitle}". Dạng Review/Kể chuyện dài ${durationMin} phút. Cung cấp: 8 tiêu đề clickbait, hashtags, keywords, và mô tả video chuẩn SEO. JSON format. Ngôn ngữ: Tiếng Việt.`
+        : `Generate SEO content for a YouTube video about "${bookTitle}". Format: Audiobook/Review, ${durationMin} minutes long. Provide: 8 clickbait titles, hashtags, keywords, and a SEO-optimized video description. JSON format. Language: English.`;
 
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -159,7 +175,8 @@ export const generateSEO = async (bookTitle: string, durationMin: number, model:
     });
 };
 
-export const generateVideoPrompts = async (bookTitle: string, frameRatio: string, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
+export const generateVideoPrompts = async (bookTitle: string, frameRatio: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
+    // Prompts for image generation usually work best in English even for VN content, but we can refine context.
     const prompt = `Generate 5 cinematic, photorealistic video prompts for background visuals in a YouTube video about "${bookTitle}". Visuals should match the story's mood. Aspect ratio: ${frameRatio}. No text/logos. JSON array of strings.`;
     
     return executeGenAIRequest(apiKey, async (ai) => {
@@ -179,9 +196,12 @@ export const generateVideoPrompts = async (bookTitle: string, frameRatio: string
     });
 };
 
-export const generateThumbIdeas = async (bookTitle: string, durationMin: number, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
+export const generateThumbIdeas = async (bookTitle: string, durationMin: number, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
+    const isVi = language === 'vi';
     const durationStr = `${Math.floor(durationMin / 60)}H${(durationMin % 60).toString().padStart(2, "0")}M`;
-    const prompt = `Cho video YouTube về "${bookTitle}", đề xuất 5 text thumbnail ngắn gọn, gây tò mò, tiếng Việt. Một ý phải chứa thời lượng: ${durationStr}. JSON array.`;
+    const prompt = isVi
+        ? `Cho video YouTube về "${bookTitle}", đề xuất 5 text thumbnail ngắn gọn, gây tò mò, tiếng Việt. Một ý phải chứa thời lượng: ${durationStr}. JSON array.`
+        : `For a YouTube video about "${bookTitle}", suggest 5 short, curiosity-inducing thumbnail texts in English. One idea must include duration: ${durationStr}. JSON array.`;
     
     return executeGenAIRequest(apiKey, async (ai) => {
         const response = await ai.models.generateContent({
@@ -200,7 +220,7 @@ export const generateThumbIdeas = async (bookTitle: string, durationMin: number,
     });
 };
 
-// Helper to chunk large text if needed (simple version)
+// Helper to chunk large text if needed
 export const chunkText = (text: string, maxChars: number = 2000): string[] => {
     const chunks: string[] = [];
     let currentChunk = "";

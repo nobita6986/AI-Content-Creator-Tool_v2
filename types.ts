@@ -1,4 +1,6 @@
 
+export type Language = 'vi' | 'en';
+
 export interface OutlineItem {
   index: number;
   title: string;
