@@ -2,7 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { OutlineItem, ScriptBlock, StoryBlock, SEOResult, LoadingStates, Language } from './types';
 import * as geminiService from './services/geminiService';
-import { Card, Empty, LoadingOverlay, Modal } from './components/ui';
+import { Card, Empty, LoadingOverlay, Modal, Toast } from './components/ui';
 
 // --- CONFIGURATION & THEMES ---
 
@@ -82,6 +82,9 @@ export default function App() {
 
   const [loading, setLoading] = useState<LoadingStates>(INITIAL_LOADING_STATES);
   const [error, setError] = useState<string | null>(null);
+  
+  const [isStoryUploaded, setIsStoryUploaded] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const theme = THEMES[language];
   const totalCharsTarget = useMemo(() => durationMin * 1000, [durationMin]);
@@ -135,7 +138,9 @@ export default function App() {
             setStoryBlocks(newBlocks);
             setOutline([]); 
             setScriptBlocks([]); 
-            alert(`Đã upload thành công ${newBlocks.length} phần truyện. Bạn có thể nhấn 'Review Truyện' ngay bây giờ.`);
+            setIsStoryUploaded(true);
+            setToastMessage(`Đã upload thành công ${newBlocks.length} phần truyện. Bạn có thể nhấn 'Review Truyện' ngay bây giờ.`);
+            e.target.value = ''; // Reset input to allow re-upload
         }
     };
     reader.readAsText(file);
@@ -171,6 +176,7 @@ export default function App() {
     setOutline(indexedResult);
     setStoryBlocks([]);
     setScriptBlocks([]);
+    setIsStoryUploaded(false);
   }, 'outline');
 
   const handleGenerateStory = withErrorHandling(async () => {
@@ -369,8 +375,8 @@ export default function App() {
           
           <Card title="2) Tạo Nội Dung">
             <div className="flex flex-col space-y-2">
-              <ThemedButton onClick={handleGenerateOutline} disabled={loading.outline}>Phân tích & Tạo sườn</ThemedButton>
-              <ThemedButton onClick={handleGenerateStory} disabled={loading.story}>Viết Truyện (Theo sườn)</ThemedButton>
+              <ThemedButton onClick={handleGenerateOutline} disabled={loading.outline || isStoryUploaded}>Phân tích & Tạo sườn</ThemedButton>
+              <ThemedButton onClick={handleGenerateStory} disabled={loading.story || isStoryUploaded}>Viết Truyện (Theo sườn)</ThemedButton>
               <ThemedButton onClick={handleGenerateReviewScript} disabled={loading.script}>Review Truyện (Kịch bản Audio)</ThemedButton>
               <ThemedButton onClick={handleGenerateSEO} disabled={loading.seo}>Tạo Tiêu đề & Mô tả SEO</ThemedButton>
               <ThemedButton onClick={handleGeneratePrompts} disabled={loading.prompts}>Tạo Prompt Video & Thumbnail</ThemedButton>
@@ -381,7 +387,7 @@ export default function App() {
 
         <section className="lg:col-span-2 space-y-6">
           <Card title="3) Sườn kịch bản" actions={
-              <ThemedButton onClick={handleGenerateOutline} disabled={loading.outline} className="text-xs px-2 py-1 h-8">Tạo sườn</ThemedButton>
+              <ThemedButton onClick={handleGenerateOutline} disabled={loading.outline || isStoryUploaded} className="text-xs px-2 py-1 h-8">Tạo sườn</ThemedButton>
           }>
             <div className="relative">
              {loading.outline && <LoadingOverlay />}
@@ -403,7 +409,7 @@ export default function App() {
 
           <Card title="4) Nội dung Truyện" actions={
             <div className="flex gap-2">
-               <ThemedButton onClick={handleGenerateStory} disabled={loading.story} className="text-xs px-2 py-1 h-8">Viết Truyện</ThemedButton>
+               <ThemedButton onClick={handleGenerateStory} disabled={loading.story || isStoryUploaded} className="text-xs px-2 py-1 h-8">Viết Truyện</ThemedButton>
                <ThemedButton onClick={exportStoryCSV} disabled={storyBlocks.length === 0} className="text-xs px-2 py-1 h-8">Tải CSV</ThemedButton>
             </div>
           }>
@@ -671,6 +677,7 @@ export default function App() {
             </div>
          </div>
       </Modal>
+      {toastMessage && <Toast message={toastMessage} onClose={() => setToastMessage(null)} />}
     </div>
   );
 }

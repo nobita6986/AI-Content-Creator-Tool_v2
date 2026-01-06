@@ -55,3 +55,21 @@ export const Modal: React.FC<{ isOpen: boolean; onClose: () => void; title: stri
     </div>
   );
 };
+
+export const Toast: React.FC<{ message: string; onClose: () => void }> = ({ message, onClose }) => {
+  React.useEffect(() => {
+    const timer = setTimeout(onClose, 3000);
+    return () => clearTimeout(timer);
+  }, [onClose]);
+
+  return (
+    <div className="fixed bottom-6 right-6 z-50 animate-in slide-in-from-bottom-5 duration-300">
+      <div className="bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-2xl flex items-center gap-3 border border-emerald-500">
+        <div className="bg-white/20 p-1 rounded-full">
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <span className="font-medium text-sm">{message}</span>
+      </div>
+    </div>
+  );
+};
