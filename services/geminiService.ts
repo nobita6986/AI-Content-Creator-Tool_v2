@@ -12,16 +12,26 @@ const executeGenAIRequest = async <T>(
     // Prioritize user-provided key, fallback to env key
     const rawKey = apiKey || process.env.API_KEY || "";
 
-    // Sanitize key: Handle multi-line inputs (textarea), trim whitespace/newlines.
-    // This fixes "Failed to execute 'append' on 'Headers': Invalid value".
-    const key = rawKey.split('\n')
-        .map(k => k.trim())
+    // Sanitize key aggressively to prevent 'Invalid value' header errors.
+    // 1. Split by newlines to handle textarea input (user might paste multiple lines)
+    // 2. Find the first non-empty candidate
+    // 3. Remove ALL whitespace (spaces, tabs, etc) from that candidate
+    const candidates = rawKey.split(/[\r\n]+/);
+    const key = candidates
+        .map(k => k.replace(/\s/g, '')) // Remove all whitespace
         .find(k => k.length > 0);
 
     if (!key) {
         throw new Error("Missing API Key: Please configure your Gemini API Key in Settings.");
     }
-    const ai = new GoogleGenAI({ apiKey: key });
+    
+    // Verify key only contains safe characters (printable ASCII)
+    if (/[^\x21-\x7E]/.test(key)) {
+         console.warn("API Key contains potential invalid characters, attempting to strip them.");
+    }
+    const cleanKey = key.replace(/[^\x21-\x7E]/g, '');
+
+    const ai = new GoogleGenAI({ apiKey: cleanKey });
     return await operation(ai);
 };
 
