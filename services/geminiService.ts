@@ -57,7 +57,7 @@ export const fileToBase64 = (file: File): Promise<string> => {
     });
 };
 
-export const generateOutline = async (bookTitle: string, idea: string, channelName: string, mcName: string, chaptersCount: number, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<Omit<OutlineItem, 'index'>[]> => {
+export const generateOutline = async (bookTitle: string, idea: string, channelName: string, mcName: string, chaptersCount: number, durationMin: number, language: Language, isAutoDuration: boolean = false, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<Omit<OutlineItem, 'index'>[]> => {
     const isVi = language === 'vi';
     const langContext = isVi 
         ? "Ngôn ngữ đầu ra: Tiếng Việt." 
@@ -66,9 +66,25 @@ export const generateOutline = async (bookTitle: string, idea: string, channelNa
     const identityContext = `Context info - Channel Name: "${channelName || 'N/A'}", Host/MC Name: "${mcName || 'N/A'}".`;
     const ideaContext = idea ? (isVi ? `Kết hợp với ý tưởng/bối cảnh: "${idea}".` : `Incorporate this idea/context: "${idea}".`) : "";
     
+    // Logic cho Prompt dựa trên chế độ Auto hoặc Manual
+    let structurePrompt = "";
+    if (isAutoDuration) {
+        structurePrompt = isVi
+            ? `Mục tiêu: Tạo ra một video dài khoảng 40-60 phút (tương đương 40.000 - 60.000 ký tự kịch bản). Hãy tự quyết định số lượng chương phù hợp (thường từ 15 đến 25 chương) để đảm bảo độ sâu và chi tiết cho thời lượng này.`
+            : `Goal: Create a video approximately 40-60 minutes long (equivalent to 40,000 - 60,000 script characters). You decide the appropriate number of chapters (usually 15-25) to ensure depth and detail for this duration.`;
+    } else {
+        structurePrompt = isVi
+            ? `Mục tiêu: Video dài chính xác ${durationMin} phút. Hãy chia nội dung thành ${chaptersCount} chương chính.`
+            : `Goal: Video strictly ${durationMin} minutes long. Structure the content into ${chaptersCount} main chapters.`;
+    }
+
     const prompt = isVi 
-        ? `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} ${identityContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook dài ${durationMin} phút. Dàn ý cần có khoảng ${chaptersCount} chương nội dung chính. Cấu trúc phải bao gồm: 1. Hook (Móc nối - Nhắc tên kênh ${channelName} nếu phù hợp), 2. Intro (Giới thiệu MC ${mcName}), 3. Các chương chính của câu chuyện, 4. Bài học rút ra, và 5. Kết thúc. ${langContext}`
-        : `Based on the book/topic "${bookTitle}". ${ideaContext} ${identityContext} Create a script outline for a YouTube video in storytelling/audiobook style, ${durationMin} minutes long. The outline should have about ${chaptersCount} main chapters. Structure: 1. Hook (Mention channel ${channelName} if fitting), 2. Intro (Introduce Host ${mcName}), 3. Main Story Chapters, 4. Key Takeaways, 5. Conclusion. ${langContext}`;
+        ? `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} ${identityContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook.
+           ${structurePrompt}
+           Cấu trúc bắt buộc: 1. Hook (Móc nối - Nhắc tên kênh ${channelName} nếu phù hợp), 2. Intro (Giới thiệu MC ${mcName}), 3. Các chương chính của câu chuyện (đủ số lượng để đạt thời lượng mục tiêu), 4. Bài học rút ra, và 5. Kết thúc. ${langContext}`
+        : `Based on the book/topic "${bookTitle}". ${ideaContext} ${identityContext} Create a script outline for a YouTube video in storytelling/audiobook style.
+           ${structurePrompt}
+           Required Structure: 1. Hook (Mention channel ${channelName} if fitting), 2. Intro (Introduce Host ${mcName}), 3. Main Story Chapters (enough to meet target duration), 4. Key Takeaways, 5. Conclusion. ${langContext}`;
 
     return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({

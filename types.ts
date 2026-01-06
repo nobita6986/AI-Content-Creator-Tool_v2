@@ -44,6 +44,7 @@ export interface SavedSession {
   bookIdea: string;
   bookImage: string | null;
   durationMin: number;
+  isAutoDuration?: boolean; // New optional field
   chaptersCount: number;
   frameRatio: string;
   outline: OutlineItem[];

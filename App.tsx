@@ -69,14 +69,23 @@ export default function App() {
 
   const [frameRatio, setFrameRatio] = useState("16:9"); 
   const [durationMin, setDurationMin] = useState(240);
-  const [chaptersCount, setChaptersCount] = useState(12);
+  // isAutoDuration state: Determines if we use the Auto (40-60m) mode
+  const [isAutoDuration, setIsAutoDuration] = useState(false);
+  
+  // -- Config State Calculation --
+  // Auto-calculate chapters: 1 chapter per ~2.5-3 mins to ensure depth (40-60k chars)
+  // If Auto Mode, we display a placeholder, but logic handles it.
+  const calculatedChapters = useMemo(() => {
+     if (isAutoDuration) return 18; // Placeholder avg for 50 mins
+     return Math.max(3, Math.ceil(durationMin / 2.5));
+  }, [durationMin, isAutoDuration]);
 
   const [selectedModel, setSelectedModel] = useState("gemini-3-pro-preview");
   
   // -- Modals --
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
-  const [activeGuideTab, setActiveGuideTab] = useState<'strengths' | 'guide'>('strengths'); // New state for tabs
+  const [activeGuideTab, setActiveGuideTab] = useState<'strengths' | 'guide'>('strengths');
   const [isExtraConfigModalOpen, setIsExtraConfigModalOpen] = useState(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
 
@@ -100,7 +109,12 @@ export default function App() {
   const [sessions, setSessions] = useState<SavedSession[]>([]);
 
   const theme = THEMES[language];
-  const totalCharsTarget = useMemo(() => durationMin * 1000, [durationMin]);
+  
+  // Display target chars: If Auto, show range. Else calc based on Duration (1000 chars/min)
+  const totalCharsTargetStr = useMemo(() => {
+      if (isAutoDuration) return "40,000 - 60,000";
+      return (durationMin * 1000).toLocaleString(language === 'vi' ? "vi-VN" : "en-US");
+  }, [durationMin, isAutoDuration, language]);
   
   // Derived values based on current language
   const currentChannelName = language === 'vi' ? channelNameVi : channelNameEn;
@@ -136,7 +150,6 @@ export default function App() {
   }, []);
 
   const handleSaveKeys = () => {
-    // Trim whitespace to prevent "Invalid header value" errors
     const trimmedGemini = apiKeyGemini.trim();
     const trimmedOpenAI = apiKeyOpenAI.trim();
 
@@ -150,7 +163,6 @@ export default function App() {
   };
 
   const handleSaveExtraConfig = () => {
-    // Save to local storage based on variables
     localStorage.setItem("nd_channel_name_vi", channelNameVi);
     localStorage.setItem("nd_mc_name_vi", mcNameVi);
     localStorage.setItem("nd_channel_name_en", channelNameEn);
@@ -178,7 +190,8 @@ export default function App() {
             bookIdea,
             bookImage,
             durationMin,
-            chaptersCount,
+            isAutoDuration,
+            chaptersCount: calculatedChapters,
             frameRatio,
             outline,
             storyBlocks,
@@ -189,19 +202,17 @@ export default function App() {
         };
 
         setSessions(prev => {
-            // Remove existing version of this session if exists
             const filtered = prev.filter(s => s.id !== currentId);
-            // Add updated version to top
             const updated = [newSession, ...filtered];
             localStorage.setItem("nd_sessions", JSON.stringify(updated));
             return updated;
         });
-    }, 2000); // Auto-save after 2 seconds of inactivity
+    }, 2000); // Auto-save after 2 seconds
 
     return () => {
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
-  }, [bookTitle, bookIdea, bookImage, durationMin, chaptersCount, frameRatio, outline, storyBlocks, scriptBlocks, seo, videoPrompts, thumbTextIdeas, language, sessionId]);
+  }, [bookTitle, bookIdea, bookImage, durationMin, isAutoDuration, calculatedChapters, frameRatio, outline, storyBlocks, scriptBlocks, seo, videoPrompts, thumbTextIdeas, language, sessionId]);
 
   const handleLoadSession = (s: SavedSession) => {
       setSessionId(s.id);
@@ -210,7 +221,7 @@ export default function App() {
       setBookIdea(s.bookIdea);
       setBookImage(s.bookImage);
       setDurationMin(s.durationMin);
-      setChaptersCount(s.chaptersCount);
+      setIsAutoDuration(!!s.isAutoDuration);
       setFrameRatio(s.frameRatio || "16:9");
       setOutline(s.outline || []);
       setStoryBlocks(s.storyBlocks || []);
@@ -230,7 +241,7 @@ export default function App() {
           setSessions(updated);
           localStorage.setItem("nd_sessions", JSON.stringify(updated));
           if (sessionId === id) {
-             setSessionId(null); // Detach current session if deleted
+             setSessionId(null);
           }
       }
   };
@@ -245,6 +256,7 @@ export default function App() {
       setSeo(null);
       setVideoPrompts([]);
       setThumbTextIdeas([]);
+      setIsAutoDuration(false);
       setToastMessage("Đã tạo phiên làm việc mới.");
   }
 
@@ -312,7 +324,7 @@ export default function App() {
   };
 
   const handleGenerateOutline = withErrorHandling(async () => {
-    const result = await geminiService.generateOutline(bookTitle, bookIdea, currentChannelName, currentMcName, chaptersCount, durationMin, language, selectedModel, apiKeyGemini);
+    const result = await geminiService.generateOutline(bookTitle, bookIdea, currentChannelName, currentMcName, calculatedChapters, durationMin, language, isAutoDuration, selectedModel, apiKeyGemini);
     const indexedResult = result.map((item, index) => ({ ...item, index }));
     setOutline(indexedResult);
     setStoryBlocks([]);
@@ -515,24 +527,52 @@ export default function App() {
                  {(currentChannelName || currentMcName) && <div className="text-[10px] mt-1 text-center opacity-60">Đã cấu hình cho {language === 'vi' ? 'Việt Nam' : 'English (US)'}</div>}
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
-                      Thời lượng (phút)
-                      <Tooltip text="Ước lượng thời gian của video thành phẩm. AI sẽ căn chỉnh độ dài nội dung cho phù hợp." />
+              <div className="space-y-3 pt-2 border-t border-dashed border-gray-800">
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="checkbox" 
+                      id="autoDuration" 
+                      checked={isAutoDuration} 
+                      onChange={(e) => setIsAutoDuration(e.target.checked)}
+                      className="accent-sky-500 w-4 h-4"
+                    />
+                    <label htmlFor="autoDuration" className={`text-sm font-medium ${theme.textAccent} cursor-pointer select-none`}>
+                      Tự động (40-60 phút / 40-60k ký tự)
                     </label>
-                    <input type="number" value={durationMin} min={5} max={240} onChange={(e)=>setDurationMin(clamp(parseInt(e.target.value||'0'),5,240))} className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 transition-colors`} />
                   </div>
-                  <div>
-                    <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
-                      Số chương
-                      <Tooltip text="Chia nội dung thành bao nhiêu phần nhỏ. Số chương nhiều giúp nội dung chi tiết hơn cho các video dài." />
-                    </label>
-                    <input type="number" value={chaptersCount} min={3} max={24} onChange={(e)=>setChaptersCount(clamp(parseInt(e.target.value||'0'),3,24))} className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 transition-colors`} />
+
+                  <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                          Thời lượng (phút)
+                          <Tooltip text="Ước lượng thời gian của video thành phẩm. AI sẽ căn chỉnh độ dài nội dung cho phù hợp." />
+                        </label>
+                        <input 
+                          type={isAutoDuration ? "text" : "number"}
+                          value={isAutoDuration ? "40-60" : durationMin} 
+                          min={5} 
+                          max={240} 
+                          disabled={isAutoDuration}
+                          onChange={(e)=>setDurationMin(clamp(parseInt(e.target.value||'0'),5,240))} 
+                          className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 transition-colors ${isAutoDuration ? 'opacity-50 cursor-not-allowed bg-slate-950/30' : ''}`} 
+                        />
+                      </div>
+                      <div>
+                        <label className={`block text-sm font-medium ${theme.textAccent} mb-1 flex items-center`}>
+                          Số chương (Auto)
+                          <Tooltip text="Số chương được tính toán tự động dựa trên thời lượng để đảm bảo độ sâu nội dung." />
+                        </label>
+                        <input 
+                          type="text" 
+                          value={isAutoDuration ? "Auto" : calculatedChapters} 
+                          readOnly
+                          className={`w-full rounded-lg ${theme.bgCard}/70 border ${theme.border} px-3 py-2 transition-colors opacity-50 cursor-not-allowed bg-slate-950/30 font-medium`} 
+                        />
+                      </div>
                   </div>
               </div>
               <div className={`p-3 rounded-lg ${theme.bgCard}/50 border ${theme.border} text-sm flex justify-between items-center`}>
-                <div>Tổng ký tự mục tiêu: <b>{fmtNumber(totalCharsTarget)}</b></div>
+                <div>Tổng ký tự mục tiêu: <b>{totalCharsTargetStr}</b></div>
                 <Tooltip text="Số lượng ký tự ước tính dựa trên thời lượng (tốc độ đọc trung bình)." />
               </div>
             </div>
