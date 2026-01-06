@@ -136,9 +136,17 @@ export default function App() {
   }, []);
 
   const handleSaveKeys = () => {
-    localStorage.setItem("nd_gemini_api_key", apiKeyGemini);
-    localStorage.setItem("nd_openai_api_key", apiKeyOpenAI);
+    // Trim whitespace to prevent "Invalid header value" errors
+    const trimmedGemini = apiKeyGemini.trim();
+    const trimmedOpenAI = apiKeyOpenAI.trim();
+
+    setApiKeyGemini(trimmedGemini);
+    setApiKeyOpenAI(trimmedOpenAI);
+    
+    localStorage.setItem("nd_gemini_api_key", trimmedGemini);
+    localStorage.setItem("nd_openai_api_key", trimmedOpenAI);
     setIsApiModalOpen(false);
+    setToastMessage("Đã lưu API Key.");
   };
 
   const handleSaveExtraConfig = () => {

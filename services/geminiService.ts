@@ -9,29 +9,38 @@ const executeGenAIRequest = async <T>(
     operation: (ai: GoogleGenAI) => Promise<T>,
     apiKey?: string
 ): Promise<T> => {
-    // Prioritize user-provided key, fallback to env key
-    const rawKey = apiKey || process.env.API_KEY || "";
+    let rawKey = apiKey;
 
-    // Sanitize key aggressively to prevent 'Invalid value' header errors.
-    // 1. Split by newlines to handle textarea input (user might paste multiple lines)
-    // 2. Find the first non-empty candidate
-    // 3. Remove ALL whitespace (spaces, tabs, etc) from that candidate
-    const candidates = rawKey.split(/[\r\n]+/);
-    const key = candidates
-        .map(k => k.replace(/\s/g, '')) // Remove all whitespace
-        .find(k => k.length > 0);
+    // Fallback to env key safely (handle cases where process is not defined in browser)
+    if (!rawKey) {
+        try {
+            // @ts-ignore
+            rawKey = process.env.API_KEY || "";
+        } catch (e) {
+            rawKey = "";
+        }
+    }
+    rawKey = rawKey || "";
+
+    // Strategy 1: Regex match for standard Google API Key (AIza...)
+    // This is the most robust way: it ignores surrounding newlines, spaces, quotes, or accidental text.
+    // Google Keys are 39 chars: 'AIza' (4) + 35 chars of base64url.
+    const googleKeyMatch = rawKey.match(/AIza[0-9A-Za-z\-_]{35}/);
+    let key = googleKeyMatch ? googleKeyMatch[0] : "";
+
+    // Strategy 2: If regex fails (unlikely for valid keys, but failsafe for potential format changes), 
+    // fall back to aggressive cleanup of the entire string.
+    if (!key) {
+        // Remove: whitespace (\s), quotes ("'), newlines (\r\n), and non-printable chars
+        const cleaned = rawKey.replace(/[\s"'\r\n]/g, '').replace(/[^\x21-\x7E]/g, '');
+        if (cleaned.length > 0) key = cleaned;
+    }
 
     if (!key) {
         throw new Error("Missing API Key: Please configure your Gemini API Key in Settings.");
     }
-    
-    // Verify key only contains safe characters (printable ASCII)
-    if (/[^\x21-\x7E]/.test(key)) {
-         console.warn("API Key contains potential invalid characters, attempting to strip them.");
-    }
-    const cleanKey = key.replace(/[^\x21-\x7E]/g, '');
 
-    const ai = new GoogleGenAI({ apiKey: cleanKey });
+    const ai = new GoogleGenAI({ apiKey: key });
     return await operation(ai);
 };
 
