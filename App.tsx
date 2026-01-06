@@ -76,6 +76,7 @@ export default function App() {
   // -- Modals --
   const [isApiModalOpen, setIsApiModalOpen] = useState(false);
   const [isGuideModalOpen, setIsGuideModalOpen] = useState(false);
+  const [activeGuideTab, setActiveGuideTab] = useState<'strengths' | 'guide'>('strengths'); // New state for tabs
   const [isExtraConfigModalOpen, setIsExtraConfigModalOpen] = useState(false);
   const [isLibraryModalOpen, setIsLibraryModalOpen] = useState(false);
 
@@ -727,49 +728,113 @@ export default function App() {
         </div>
       </Modal>
 
-      {/* Guide Modal */}
+      {/* Guide Modal (Two Tabs) */}
       <Modal 
         isOpen={isGuideModalOpen} 
         onClose={() => setIsGuideModalOpen(false)} 
         title="Hướng dẫn sử dụng & Quy trình"
       >
-        <div className={`space-y-6 ${theme.textHighlight}`}>
+        <div className={`space-y-4 ${theme.textHighlight}`}>
           
-          <div className={`p-4 rounded-lg ${theme.subtleBg} border ${theme.border} text-sm`}>
-            <h4 className={`font-bold text-lg mb-2 ${theme.textAccent}`}>Điểm Mạnh Của Tool</h4>
-            <ul className="list-disc list-inside space-y-1 opacity-90">
-              <li><b>Thư viện tự động:</b> Mọi thao tác được tự động lưu. Bạn có thể mở lại các dự án cũ bất cứ lúc nào.</li>
-              <li><b>Tự động hóa toàn diện:</b> Từ ý tưởng thô sơ đến kịch bản chi tiết, SEO, và Prompt hình ảnh chỉ trong vài cú click.</li>
-              <li><b>Upload & Review linh hoạt:</b> Hỗ trợ tải lên file truyện có sẵn (.txt) để AI phân tích và viết kịch bản lời dẫn (Review) ngay lập tức mà không cần qua bước tạo sườn.</li>
-              <li><b>Đa ngôn ngữ & Thị trường:</b> Hỗ trợ cấu hình riêng biệt cho thị trường Việt Nam và US (Tên kênh, tên MC tự động chuyển đổi).</li>
-              <li><b>Cơ chế API thông minh:</b> Tự động xoay vòng (Round-Robin) và chuyển đổi API Key dự phòng (Fail-over).</li>
-            </ul>
+          {/* Tabs Header */}
+          <div className="flex border-b border-gray-700 mb-4">
+            <button 
+              className={`flex-1 py-2 text-sm font-semibold transition-colors ${activeGuideTab === 'strengths' ? `${theme.textAccent} border-b-2 ${theme.border}` : 'opacity-50 hover:opacity-100 hover:bg-white/5'}`}
+              onClick={() => setActiveGuideTab('strengths')}
+            >
+              Điểm Mạnh
+            </button>
+            <button 
+              className={`flex-1 py-2 text-sm font-semibold transition-colors ${activeGuideTab === 'guide' ? `${theme.textAccent} border-b-2 ${theme.border}` : 'opacity-50 hover:opacity-100 hover:bg-white/5'}`}
+              onClick={() => setActiveGuideTab('guide')}
+            >
+              Hướng dẫn chi tiết
+            </button>
           </div>
 
-          <div>
-            <h4 className={`font-bold text-lg mb-3 ${theme.textAccent} border-b ${theme.border} pb-2`}>Quy trình làm việc (Workflow)</h4>
-            <div className="space-y-4 text-sm">
+          {/* Tab Content: Điểm Mạnh */}
+          {activeGuideTab === 'strengths' && (
+            <div className={`p-4 rounded-lg ${theme.subtleBg} border ${theme.border} text-sm space-y-2 animate-in fade-in zoom-in-95 duration-200`}>
+                <h4 className={`font-bold text-lg mb-2 ${theme.textAccent}`}>Tính Năng Nổi Bật</h4>
+                <ul className="list-disc list-inside space-y-2 opacity-90">
+                  <li><b>Thư viện tự động:</b> Mọi thao tác được tự động lưu sau mỗi thay đổi. Bạn có thể đóng tab trình duyệt và mở lại sau để tiếp tục làm việc mà không sợ mất dữ liệu.</li>
+                  <li><b>Tự động hóa toàn diện:</b> Chỉ cần nhập tên sách, AI sẽ lo từ A-Z: Lên sườn ý tưởng -> Viết nội dung chi tiết -> Chuyển thể kịch bản MC -> Tối ưu SEO -> Gợi ý Prompt hình ảnh.</li>
+                  <li><b>Linh hoạt đầu vào:</b> 
+                    <ul className="list-[circle] list-inside ml-5 mt-1 text-xs opacity-80">
+                       <li>Chưa có gì? -> Dùng tính năng <b>Tạo sườn</b>.</li>
+                       <li>Đã có file truyện .txt? -> Dùng tính năng <b>Upload</b> để AI viết kịch bản review ngay lập tức.</li>
+                    </ul>
+                  </li>
+                  <li><b>Đa thị trường:</b> Hỗ trợ làm content cho cả Việt Nam và Global (US). Cấu hình tên Kênh/MC tự động chuyển đổi theo ngôn ngữ bạn chọn.</li>
+                  <li><b>Bảo mật & Ổn định:</b> Sử dụng API Key cá nhân của bạn. Hệ thống hỗ trợ nhập nhiều key dự phòng để tự động chuyển đổi khi hết hạn ngạch (quota).</li>
+                </ul>
+            </div>
+          )}
+
+          {/* Tab Content: Hướng dẫn chi tiết */}
+          {activeGuideTab === 'guide' && (
+            <div className="space-y-6 text-sm animate-in fade-in slide-in-from-right-4 duration-200 h-[60vh] overflow-y-auto pr-2">
+              
               <div className="flex gap-3">
                 <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>1</div>
                 <div>
-                  <div className="font-semibold">Cấu hình & Đầu vào</div>
-                  <p className="opacity-80 mt-1">Chọn ngôn ngữ (VN/US) và nhập Tên sách. Cấu hình Kênh/MC trong mục "Cấu hình thêm" sẽ tự động lưu theo ngôn ngữ bạn chọn.</p>
+                  <div className="font-semibold text-base mb-1">Cấu hình ban đầu (Quan trọng)</div>
+                  <ul className="list-disc list-inside opacity-80 space-y-1">
+                    <li>Nhấn nút <b>API</b> trên góc phải để nhập Gemini API Key (bắt buộc).</li>
+                    <li>Chọn ngôn ngữ (VN/US) bạn muốn làm video.</li>
+                    <li>Nhập <b>Tên sách / Chủ đề</b> vào ô nhập liệu chính.</li>
+                    <li>(Tùy chọn) Mở <b>Cấu hình thêm</b> để nhập Tên Kênh và Tên MC. Việc này giúp AI xưng hô tự nhiên hơn trong kịch bản (VD: "Chào mừng các bạn quay trở lại với kênh [Tên Kênh]...").</li>
+                  </ul>
                 </div>
               </div>
-              {/* ... other steps remain similar ... */}
-               <div className="flex gap-3">
+
+              <div className="flex gap-3">
                 <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>2</div>
                 <div>
-                  <div className="font-semibold">Lên Sườn Bài / Upload</div>
-                  <p className="opacity-80 mt-1">Dùng tính năng AI tạo sườn hoặc Upload file có sẵn.</p>
+                  <div className="font-semibold text-base mb-1">Xây dựng khung nội dung</div>
+                  <p className="opacity-80 mb-2">Bạn có 2 lựa chọn tại bước này:</p>
+                  <div className={`grid grid-cols-2 gap-2 text-xs`}>
+                     <div className={`p-2 rounded border ${theme.borderLight} ${theme.bgCard}/50`}>
+                        <div className="font-bold text-sky-400 mb-1">Cách 1: AI tự nghĩ (Tạo sườn)</div>
+                        Phù hợp khi bạn chỉ có mỗi tên sách. Nhấn nút <b>Phân tích & Tạo sườn</b>. AI sẽ chia nội dung thành các chương hồi logic.
+                     </div>
+                     <div className={`p-2 rounded border ${theme.borderLight} ${theme.bgCard}/50`}>
+                        <div className="font-bold text-emerald-400 mb-1">Cách 2: Upload có sẵn</div>
+                        Phù hợp khi bạn đã có file nội dung (.txt). Upload file lên, Tool sẽ tự động bỏ qua bước tạo sườn và bước viết truyện, cho phép bạn nhảy cóc đến bước Review.
+                     </div>
+                  </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <div className="pt-2">
+              <div className="flex gap-3">
+                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>3</div>
+                <div>
+                  <div className="font-semibold text-base mb-1">Viết chi tiết & Chuyển thể Script</div>
+                  <ul className="list-disc list-inside opacity-80 space-y-1">
+                    <li>Nếu dùng Cách 1 (Tạo sườn): Nhấn <b>Viết Truyện (Theo sườn)</b>. AI sẽ viết chi tiết từng chương.</li>
+                    <li>Sau khi có nội dung truyện (từ AI hoặc Upload): Nhấn <b>Review Truyện</b>. Đây là bước quan trọng nhất. AI sẽ đóng vai MC, chuyển đổi văn bản đọc thành văn bản nói (kịch bản thu âm), thêm các câu cảm thán, dẫn dắt, phân tích sâu sắc.</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex gap-3">
+                <div className={`flex-none w-6 h-6 rounded-full ${theme.badge} text-white flex items-center justify-center font-bold text-xs`}>4</div>
+                <div>
+                  <div className="font-semibold text-base mb-1">Đóng gói & Xuất bản</div>
+                  <ul className="list-disc list-inside opacity-80 space-y-1">
+                    <li>Nhấn <b>Tạo SEO</b> để lấy Tiêu đề giật tít, Mô tả video chuẩn SEO Youtube và Hashtag.</li>
+                    <li>Nhấn <b>Tạo Prompt</b> để lấy các câu lệnh vẽ hình (dùng cho Midjourney/Leonardo) nhằm tạo Thumbnail và Video footage.</li>
+                    <li>Cuối cùng, nhấn các nút <b>Tải CSV</b> ở từng mục để lưu nội dung về máy.</li>
+                  </ul>
+                </div>
+              </div>
+
+            </div>
+          )}
+
+          <div className="pt-2 border-t border-gray-700 mt-4">
             <button onClick={() => setIsGuideModalOpen(false)} className={`w-full py-2 rounded font-semibold ${theme.buttonPrimary} text-white`}>
-              Đã hiểu, bắt đầu ngay!
+              Đóng hướng dẫn
             </button>
           </div>
 

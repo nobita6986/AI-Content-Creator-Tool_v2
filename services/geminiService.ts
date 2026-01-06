@@ -10,7 +10,14 @@ const executeGenAIRequest = async <T>(
     apiKey?: string
 ): Promise<T> => {
     // Prioritize user-provided key, fallback to env key
-    const key = apiKey || process.env.API_KEY;
+    const rawKey = apiKey || process.env.API_KEY || "";
+
+    // Sanitize key: Handle multi-line inputs (textarea), trim whitespace/newlines.
+    // This fixes "Failed to execute 'append' on 'Headers': Invalid value".
+    const key = rawKey.split('\n')
+        .map(k => k.trim())
+        .find(k => k.length > 0);
+
     if (!key) {
         throw new Error("Missing API Key: Please configure your Gemini API Key in Settings.");
     }
