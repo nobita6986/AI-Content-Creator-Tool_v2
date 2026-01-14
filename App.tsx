@@ -398,6 +398,15 @@ export default function App() {
     URL.revokeObjectURL(link.href);
   };
 
+  const downloadTXT = (filename: string, content: string) => {
+    const blob = new Blob(["\uFEFF" + content], { type: 'text/plain;charset=utf-8;' });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(link.href);
+  };
+
   const exportScriptCSV = () => {
     if (!scriptBlocks.length) return;
     const rows = [["STT", "Chương", "Review Script"], ...scriptBlocks.map(b => [String(b.index), b.chapter, b.text])];
@@ -414,6 +423,24 @@ export default function App() {
     if (!videoPrompts.length) return;
     const rows = [["STT", "Prompt"], ...videoPrompts.map((p, i) => [String(i + 1), p])];
     downloadCSV(`prompts_${geminiService.slugify(bookTitle)}.csv`, rows);
+  };
+
+  const exportSeoTXT = () => {
+    if (!seo) return;
+    const content = 
+`--- TIÊU ĐỀ ĐỀ XUẤT ---
+${seo.titles.map(t => `• ${t}`).join('\n')}
+
+--- HASHTAGS ---
+${seo.hashtags.join(' ')}
+
+--- KEYWORDS ---
+${seo.keywords.join(', ')}
+
+--- MÔ TẢ VIDEO ---
+${seo.description}`;
+    
+    downloadTXT(`seo_${geminiService.slugify(bookTitle)}.txt`, content);
   };
 
   // Reusable themed button
@@ -659,7 +686,10 @@ export default function App() {
           </Card>
 
           <Card title="6) Gợi ý SEO" actions={
-             <ThemedButton onClick={handleGenerateSEO} disabled={loading.seo} className="text-xs px-2 py-1 h-8">Tạo SEO</ThemedButton>
+             <div className="flex gap-2">
+                <ThemedButton onClick={handleGenerateSEO} disabled={loading.seo} className="text-xs px-2 py-1 h-8">Tạo SEO</ThemedButton>
+                <ThemedButton onClick={exportSeoTXT} disabled={!seo} className="text-xs px-2 py-1 h-8">Tải TXT</ThemedButton>
+             </div>
           }>
             <div className="relative">
               {loading.seo && <LoadingOverlay />}
