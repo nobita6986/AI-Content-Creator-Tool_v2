@@ -164,6 +164,8 @@ export const generateReviewBlock = async (storyContent: string, chapterTitle: st
     }, apiKey);
 };
 
+// --- EXISTING SEO/PROMPT FUNCTIONS (FOR AI GENERATED FLOW) ---
+
 export const generateSEO = async (bookTitle: string, channelName: string, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
     const isVi = language === 'vi';
     const channelContext = channelName ? (isVi ? `Tên kênh là "${channelName}".` : `Channel name is "${channelName}".`) : "";
@@ -221,6 +223,97 @@ export const generateThumbIdeas = async (bookTitle: string, durationMin: number,
     const prompt = isVi
         ? `Cho video YouTube về "${bookTitle}", đề xuất 5 text thumbnail ngắn gọn, gây tò mò, tiếng Việt. Một ý phải chứa thời lượng: ${durationStr}. JSON array.`
         : `For a YouTube video about "${bookTitle}", suggest 5 short, curiosity-inducing thumbnail texts in English. One idea must include duration: ${durationStr}. JSON array.`;
+    
+    return executeGenAIRequest(async (ai) => {
+        const response = await ai.models.generateContent({
+            model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
+            contents: [{ parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                }
+            }
+        });
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText);
+    }, apiKey);
+};
+
+// --- NEW SEO/PROMPT FUNCTIONS (FOR UPLOADED STORY FLOW) ---
+
+export const generateSEOFromContent = async (storyContent: string, channelName: string, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
+    const isVi = language === 'vi';
+    const channelContext = channelName ? (isVi ? `Tên kênh là "${channelName}".` : `Channel name is "${channelName}".`) : "";
+
+    // Prompt chuyên biệt để phân tích nội dung truyện upload
+    const prompt = isVi
+        ? `Hãy đọc đoạn trích nội dung truyện bên dưới. Bỏ qua tên file nếu nó vô nghĩa. Tự xác định tên truyện, thể loại, nhân vật chính từ nội dung.
+           Nhiệm vụ: Tạo nội dung SEO cho video YouTube Review/Kể chuyện dài ${durationMin} phút về tác phẩm này. ${channelContext}
+           Nội dung truyện: "${storyContent.substring(0, 30000)}..." (đã cắt ngắn)
+           Yêu cầu output: 8 tiêu đề clickbait hấp dẫn (dựa trên cốt truyện thực tế), hashtags, keywords (bao gồm tên kênh), và mô tả video chuẩn SEO (tóm tắt cốt truyện và nhắc đến tên kênh). JSON format. Ngôn ngữ: Tiếng Việt.`
+        : `Read the story excerpt below. Ignore the filename if generic. Identify the real title, genre, and main characters from the content.
+           Task: Generate SEO content for a YouTube video Review/Audiobook (${durationMin} mins) about this story. ${channelContext}
+           Story Excerpt: "${storyContent.substring(0, 30000)}..." (truncated)
+           Output Requirements: 8 clickbait titles (based on actual plot), hashtags, keywords (include channel name), and a SEO-optimized video description (summarize plot and mention channel). JSON format. Language: English.`;
+
+    return executeGenAIRequest(async (ai) => {
+        const response = await ai.models.generateContent({
+            model: model.includes('gpt') ? 'gemini-3-pro-preview' : model,
+            contents: [{ parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.OBJECT,
+                    properties: {
+                        titles: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        hashtags: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        keywords: { type: Type.ARRAY, items: { type: Type.STRING } },
+                        description: { type: Type.STRING }
+                    },
+                    required: ["titles", "hashtags", "keywords", "description"]
+                }
+            }
+        });
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText);
+    }, apiKey);
+};
+
+export const generateVideoPromptsFromContent = async (storyContent: string, frameRatio: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
+    const prompt = `Analyze the following story excerpt. Identify the setting, mood, and visual style.
+    Story Excerpt: "${storyContent.substring(0, 20000)}..."
+    Task: Generate 5 cinematic, photorealistic video prompts for background visuals in a YouTube video about this story. Visuals should match the story's actual mood. Aspect ratio: ${frameRatio}. No text/logos. JSON array of strings.`;
+    
+    return executeGenAIRequest(async (ai) => {
+        const response = await ai.models.generateContent({
+            model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
+            contents: [{ parts: [{ text: prompt }] }],
+            config: {
+                responseMimeType: "application/json",
+                responseSchema: {
+                    type: Type.ARRAY,
+                    items: { type: Type.STRING }
+                }
+            }
+        });
+        const jsonText = response.text.trim();
+        return JSON.parse(jsonText);
+    }, apiKey);
+};
+
+export const generateThumbIdeasFromContent = async (storyContent: string, durationMin: number, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
+    const isVi = language === 'vi';
+    const durationStr = `${Math.floor(durationMin / 60)}H${(durationMin % 60).toString().padStart(2, "0")}M`;
+    
+    const prompt = isVi
+        ? `Đọc đoạn trích truyện sau và hiểu cốt truyện chính: "${storyContent.substring(0, 20000)}..."
+           Cho video YouTube về truyện này, đề xuất 5 text thumbnail ngắn gọn, gây tò mò, sát với tình tiết gay cấn trong truyện. Ngôn ngữ: Tiếng Việt.
+           Yêu cầu: Một ý phải chứa thời lượng: ${durationStr}. JSON array.`
+        : `Read the story excerpt to understand the main plot: "${storyContent.substring(0, 20000)}..."
+           For a YouTube video about this story, suggest 5 short, curiosity-inducing thumbnail texts based on the actual dramatic plot points. Language: English.
+           Requirement: One idea must include duration: ${durationStr}. JSON array.`;
     
     return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({

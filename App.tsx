@@ -371,15 +371,43 @@ export default function App() {
   }, 'script');
 
   const handleGenerateSEO = withErrorHandling(async () => {
-    const result = await geminiService.generateSEO(bookTitle, currentChannelName, durationMin, language, selectedModel, apiKeyGemini);
+    let result: SEOResult;
+    
+    // NEW LOGIC: Check if story is uploaded
+    if (isStoryUploaded && storyBlocks.length > 0) {
+        // Concatenate first few blocks to get enough context (e.g., first 3-4 blocks or up to 30k chars)
+        // Taking first 5 blocks safely
+        const context = storyBlocks.slice(0, 5).map(b => b.content).join("\n");
+        result = await geminiService.generateSEOFromContent(context, currentChannelName, durationMin, language, selectedModel, apiKeyGemini);
+    } else {
+        // OLD LOGIC: Use Book Title
+        result = await geminiService.generateSEO(bookTitle, currentChannelName, durationMin, language, selectedModel, apiKeyGemini);
+    }
     setSeo(result);
   }, 'seo');
   
   const handleGeneratePrompts = withErrorHandling(async () => {
-    const [prompts, thumbs] = await Promise.all([
-      geminiService.generateVideoPrompts(bookTitle, frameRatio, language, selectedModel, apiKeyGemini),
-      geminiService.generateThumbIdeas(bookTitle, durationMin, language, selectedModel, apiKeyGemini)
-    ]);
+    let prompts: string[] = [];
+    let thumbs: string[] = [];
+
+    // NEW LOGIC: Check if story is uploaded
+    if (isStoryUploaded && storyBlocks.length > 0) {
+        // Concatenate context, similar to SEO but maybe shorter context is needed
+        const context = storyBlocks.slice(0, 3).map(b => b.content).join("\n");
+        
+        [prompts, thumbs] = await Promise.all([
+            geminiService.generateVideoPromptsFromContent(context, frameRatio, language, selectedModel, apiKeyGemini),
+            geminiService.generateThumbIdeasFromContent(context, durationMin, language, selectedModel, apiKeyGemini)
+        ]);
+
+    } else {
+        // OLD LOGIC: Use Book Title
+        [prompts, thumbs] = await Promise.all([
+            geminiService.generateVideoPrompts(bookTitle, frameRatio, language, selectedModel, apiKeyGemini),
+            geminiService.generateThumbIdeas(bookTitle, durationMin, language, selectedModel, apiKeyGemini)
+        ]);
+    }
+
     setVideoPrompts(prompts);
     setThumbTextIdeas(thumbs);
   }, 'prompts');
