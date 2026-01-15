@@ -259,14 +259,16 @@ export const generateSEOFromContent = async (storyContent: string, channelName: 
     const truncatedContent = storyContent.substring(0, 15000);
 
     const prompt = isVi
-        ? `Hãy đọc đoạn trích truyện bên dưới. Bỏ qua tên file nếu vô nghĩa. Tự xác định tên truyện, thể loại, nhân vật chính từ nội dung.
-           Nhiệm vụ: Tạo nội dung SEO cho video YouTube Review/Kể chuyện dài ${durationMin} phút về tác phẩm này. ${channelContext}
+        ? `Phân tích sâu đoạn trích truyện bên dưới. Tự rút ra Tên truyện, Chủ đề và Nhân vật chính từ chính nội dung văn bản. 
+           QUAN TRỌNG: Bỏ qua hoàn toàn tên file hoặc các thông tin kỹ thuật không liên quan đến cốt truyện. KHÔNG ĐƯỢC bị ảnh hưởng bởi các từ khóa chung chung.
+           Nhiệm vụ: Tạo nội dung SEO cho video YouTube Review/Kể chuyện dài ${durationMin} phút dựa trên CỐT TRUYỆN THỰC TẾ vừa phân tích. ${channelContext}
            Nội dung truyện (trích đoạn): "${truncatedContent}..."
-           Yêu cầu output: 8 tiêu đề clickbait hấp dẫn (dựa trên cốt truyện), hashtags, keywords (gồm tên kênh), và mô tả video chuẩn SEO (tóm tắt cốt truyện & nhắc tên kênh). JSON format. Ngôn ngữ: Tiếng Việt.`
-        : `Read the story excerpt below. Ignore filename if generic. Identify real title, genre, characters.
-           Task: Generate SEO content for YouTube Review/Audiobook (${durationMin} mins). ${channelContext}
+           Yêu cầu output: 8 tiêu đề clickbait hấp dẫn (dựa trên cốt truyện cụ thể), hashtags, keywords (gồm tên kênh), và mô tả video chuẩn SEO (tóm tắt cốt truyện & nhắc tên kênh). JSON format. Ngôn ngữ: Tiếng Việt.`
+        : `Deeply analyze the story excerpt below. Extract the Real Title, Theme, and Characters from the text content itself.
+           IMPORTANT: Completely ignore filename or technical metadata. Do NOT be biased by generic keywords.
+           Task: Generate SEO content for YouTube Review/Audiobook (${durationMin} mins) based on this ACTUAL PLOT. ${channelContext}
            Story Excerpt: "${truncatedContent}..."
-           Output Requirements: 8 clickbait titles (based on plot), hashtags, keywords (include channel name), and SEO description. JSON format. Language: English.`;
+           Output Requirements: 8 clickbait titles (based on specific plot), hashtags, keywords (include channel name), and SEO description. JSON format. Language: English.`;
 
     return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
@@ -294,8 +296,8 @@ export const generateVideoPromptsFromContent = async (storyContent: string, fram
     // Truncate safely
     const truncatedContent = storyContent.substring(0, 10000);
 
-    const prompt = `Analyze the story excerpt: "${truncatedContent}...". Identify setting, mood, and visual style.
-    Task: Generate 5 cinematic, photorealistic video prompts for background visuals in a YouTube video about this story. Visuals should match the story's actual mood. Aspect ratio: ${frameRatio}. No text/logos. JSON array of strings.`;
+    const prompt = `Analyze the story excerpt: "${truncatedContent}...". Identify specific setting, characters, mood, and visual style from the text.
+    Task: Generate 5 cinematic, photorealistic video prompts for background visuals in a YouTube video about this story. Visuals should match the story's actual plot and mood. Aspect ratio: ${frameRatio}. No text/logos. JSON array of strings.`;
     
     return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
@@ -320,10 +322,10 @@ export const generateThumbIdeasFromContent = async (storyContent: string, durati
 
     const prompt = isVi
         ? `Đọc đoạn trích: "${truncatedContent}...". Hiểu cốt truyện chính.
-           Cho video YouTube về truyện này, đề xuất 5 text thumbnail ngắn gọn, gây tò mò, sát với tình tiết gay cấn. Ngôn ngữ: Tiếng Việt.
+           Cho video YouTube về truyện này, đề xuất 5 text thumbnail ngắn gọn, gây tò mò, sát với tình tiết gay cấn của câu chuyện (không dùng text chung chung). Ngôn ngữ: Tiếng Việt.
            Yêu cầu: Một ý phải chứa thời lượng: ${durationStr}. JSON array.`
         : `Read excerpt: "${truncatedContent}...". Understand main plot.
-           Suggest 5 short, curiosity-inducing thumbnail texts based on actual dramatic plot points. Language: English.
+           Suggest 5 short, curiosity-inducing thumbnail texts based on actual dramatic plot points (avoid generic text). Language: English.
            Requirement: One idea must include duration: ${durationStr}. JSON array.`;
     
     return executeGenAIRequest(async (ai) => {

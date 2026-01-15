@@ -230,6 +230,14 @@ export default function App() {
       setVideoPrompts(s.videoPrompts || []);
       setThumbTextIdeas(s.thumbTextIdeas || []);
       
+      // Determine if this was an upload session based on data structure
+      // (Upload sessions have storyBlocks but no outline)
+      if (s.storyBlocks && s.storyBlocks.length > 0 && (!s.outline || s.outline.length === 0)) {
+          setIsStoryUploaded(true);
+      } else {
+          setIsStoryUploaded(false);
+      }
+
       setIsLibraryModalOpen(false);
       setToastMessage(`Đã tải lại phiên làm việc: "${s.bookTitle}"`);
   };
@@ -257,6 +265,7 @@ export default function App() {
       setVideoPrompts([]);
       setThumbTextIdeas([]);
       setIsAutoDuration(false);
+      setIsStoryUploaded(false);
       setToastMessage("Đã tạo phiên làm việc mới.");
   }
 
@@ -373,14 +382,16 @@ export default function App() {
   const handleGenerateSEO = withErrorHandling(async () => {
     let result: SEOResult;
     
-    // NEW LOGIC: Check if story is uploaded
-    if (isStoryUploaded && storyBlocks.length > 0) {
-        // Concatenate first few blocks to get enough context (e.g., first 3-4 blocks or up to 30k chars)
-        // Taking first 5 blocks safely
-        const context = storyBlocks.slice(0, 5).map(b => b.content).join("\n");
+    // DETECT UPLOAD MODE ROBUSTLY:
+    // If flag is true OR (we have story blocks but no outline, implying it was an upload session restored from storage)
+    const isUploadMode = isStoryUploaded || (storyBlocks.length > 0 && outline.length === 0);
+
+    if (isUploadMode && storyBlocks.length > 0) {
+        // Concatenate more blocks for better context (first 10 blocks or 20-30k chars is safe with new helper)
+        const context = storyBlocks.slice(0, 10).map(b => b.content).join("\n");
         result = await geminiService.generateSEOFromContent(context, currentChannelName, durationMin, language, selectedModel, apiKeyGemini);
     } else {
-        // OLD LOGIC: Use Book Title
+        // OLD LOGIC: Use Book Title (Only for AI Generated Story Flow)
         result = await geminiService.generateSEO(bookTitle, currentChannelName, durationMin, language, selectedModel, apiKeyGemini);
     }
     setSeo(result);
@@ -390,10 +401,11 @@ export default function App() {
     let prompts: string[] = [];
     let thumbs: string[] = [];
 
-    // NEW LOGIC: Check if story is uploaded
-    if (isStoryUploaded && storyBlocks.length > 0) {
-        // Concatenate context, similar to SEO but maybe shorter context is needed
-        const context = storyBlocks.slice(0, 3).map(b => b.content).join("\n");
+    // DETECT UPLOAD MODE ROBUSTLY
+    const isUploadMode = isStoryUploaded || (storyBlocks.length > 0 && outline.length === 0);
+
+    if (isUploadMode && storyBlocks.length > 0) {
+        const context = storyBlocks.slice(0, 5).map(b => b.content).join("\n");
         
         [prompts, thumbs] = await Promise.all([
             geminiService.generateVideoPromptsFromContent(context, frameRatio, language, selectedModel, apiKeyGemini),
