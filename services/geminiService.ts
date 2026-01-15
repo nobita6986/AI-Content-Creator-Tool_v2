@@ -3,6 +3,30 @@ import { GoogleGenAI, Type } from "@google/genai";
 import { OutlineItem, SEOResult, Language } from '../types';
 
 /**
+ * Helper to safely parse JSON from AI response
+ */
+const safeJsonParse = (text: string | undefined): any => {
+    if (!text || !text.trim()) {
+        throw new Error("AI trả về phản hồi rỗng (có thể do lỗi mạng hoặc bộ lọc an toàn).");
+    }
+    
+    let clean = text.trim();
+    // Remove markdown code blocks if present (common in AI responses)
+    if (clean.startsWith("```json")) {
+        clean = clean.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+    } else if (clean.startsWith("```")) {
+         clean = clean.replace(/^```\s*/, "").replace(/\s*```$/, "");
+    }
+    
+    try {
+        return JSON.parse(clean);
+    } catch (e) {
+        console.error("JSON Parse Error. Raw text:", text);
+        throw new Error(`Lỗi định dạng dữ liệu từ AI: ${e instanceof Error ? e.message : String(e)}`);
+    }
+};
+
+/**
  * Execute a Google GenAI operation using provided apiKey or process.env.API_KEY.
  */
 const executeGenAIRequest = async <T>(
@@ -23,15 +47,11 @@ const executeGenAIRequest = async <T>(
     rawKey = rawKey || "";
 
     // Strategy 1: Regex match for standard Google API Key (AIza...)
-    // This is the most robust way: it ignores surrounding newlines, spaces, quotes, or accidental text.
-    // Google Keys are 39 chars: 'AIza' (4) + 35 chars of base64url.
     const googleKeyMatch = rawKey.match(/AIza[0-9A-Za-z\-_]{35}/);
     let key = googleKeyMatch ? googleKeyMatch[0] : "";
 
-    // Strategy 2: If regex fails (unlikely for valid keys, but failsafe for potential format changes), 
-    // fall back to aggressive cleanup of the entire string.
+    // Strategy 2: Fallback cleanup
     if (!key) {
-        // Remove: whitespace (\s), quotes ("'), newlines (\r\n), and non-printable chars
         const cleaned = rawKey.replace(/[\s"'\r\n]/g, '').replace(/[^\x21-\x7E]/g, '');
         if (cleaned.length > 0) key = cleaned;
     }
@@ -66,25 +86,24 @@ export const generateOutline = async (bookTitle: string, idea: string, channelNa
     const identityContext = `Context info - Channel Name: "${channelName || 'N/A'}", Host/MC Name: "${mcName || 'N/A'}".`;
     const ideaContext = idea ? (isVi ? `Kết hợp với ý tưởng/bối cảnh: "${idea}".` : `Incorporate this idea/context: "${idea}".`) : "";
     
-    // Logic cho Prompt dựa trên chế độ Auto hoặc Manual
     let structurePrompt = "";
     if (isAutoDuration) {
         structurePrompt = isVi
-            ? `Mục tiêu: Tạo ra một video dài khoảng 40-60 phút (tương đương 40.000 - 60.000 ký tự kịch bản). Hãy tự quyết định số lượng chương phù hợp (thường từ 15 đến 25 chương) để đảm bảo độ sâu và chi tiết cho thời lượng này.`
-            : `Goal: Create a video approximately 40-60 minutes long (equivalent to 40,000 - 60,000 script characters). You decide the appropriate number of chapters (usually 15-25) to ensure depth and detail for this duration.`;
+            ? `Mục tiêu: Tạo ra một video dài khoảng 40-60 phút. Hãy tự quyết định số lượng chương phù hợp (thường từ 15 đến 25 chương).`
+            : `Goal: Create a video approximately 40-60 minutes long. You decide the appropriate number of chapters (usually 15-25).`;
     } else {
         structurePrompt = isVi
-            ? `Mục tiêu: Video dài chính xác ${durationMin} phút. Hãy chia nội dung thành ${chaptersCount} chương chính.`
-            : `Goal: Video strictly ${durationMin} minutes long. Structure the content into ${chaptersCount} main chapters.`;
+            ? `Mục tiêu: Video dài chính xác ${durationMin} phút. Chia thành ${chaptersCount} chương chính.`
+            : `Goal: Video strictly ${durationMin} minutes long. Structure into ${chaptersCount} main chapters.`;
     }
 
     const prompt = isVi 
         ? `Dựa trên tên sách/chủ đề "${bookTitle}". ${ideaContext} ${identityContext} Hãy tạo dàn ý kịch bản cho một video YouTube theo phong cách kể chuyện/audiobook.
            ${structurePrompt}
-           Cấu trúc bắt buộc: 1. Hook (Móc nối - Nhắc tên kênh ${channelName} nếu phù hợp), 2. Intro (Giới thiệu MC ${mcName}), 3. Các chương chính của câu chuyện (đủ số lượng để đạt thời lượng mục tiêu), 4. Bài học rút ra, và 5. Kết thúc. ${langContext}`
+           Cấu trúc bắt buộc: 1. Hook (Móc nối), 2. Intro (Giới thiệu MC), 3. Các chương chính, 4. Bài học, 5. Kết thúc. ${langContext}`
         : `Based on the book/topic "${bookTitle}". ${ideaContext} ${identityContext} Create a script outline for a YouTube video in storytelling/audiobook style.
            ${structurePrompt}
-           Required Structure: 1. Hook (Mention channel ${channelName} if fitting), 2. Intro (Introduce Host ${mcName}), 3. Main Story Chapters (enough to meet target duration), 4. Key Takeaways, 5. Conclusion. ${langContext}`;
+           Required Structure: 1. Hook, 2. Intro, 3. Main Story Chapters, 4. Key Takeaways, 5. Conclusion. ${langContext}`;
 
     return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
@@ -99,18 +118,14 @@ export const generateOutline = async (bookTitle: string, idea: string, channelNa
                         properties: {
                             title: { type: Type.STRING },
                             focus: { type: Type.STRING },
-                            actions: {
-                                type: Type.ARRAY,
-                                items: { type: Type.STRING }
-                            }
+                            actions: { type: Type.ARRAY, items: { type: Type.STRING } }
                         },
                         required: ["title", "focus", "actions"]
                     }
                 }
             }
         });
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
+        return safeJsonParse(response.text);
     }, apiKey);
 };
 
@@ -119,19 +134,19 @@ export const generateStoryBlock = async (item: OutlineItem, bookTitle: string, i
     const ideaContext = idea ? (isVi ? `Lưu ý ý tưởng chủ đạo: "${idea}".` : `Note the core idea: "${idea}".`) : "";
     
     const prompt = isVi
-        ? `Bạn là một tiểu thuyết gia tài ba. Hãy viết nội dung chi tiết cho chương "${item.title}" của tác phẩm "${bookTitle}". ${ideaContext}
+        ? `Bạn là một tiểu thuyết gia. Viết nội dung cho chương "${item.title}" của tác phẩm "${bookTitle}". ${ideaContext}
            Mục tiêu: "${item.focus}". Tình tiết: ${item.actions.join(', ')}.
-           Viết dạng văn xuôi, kể chuyện, văn phong lôi cuốn, giàu cảm xúc. 400-600 từ. Chỉ trả về nội dung truyện tiếng Việt.`
-        : `You are a best-selling novelist. Write detailed content for the chapter "${item.title}" of the book/story "${bookTitle}". ${ideaContext}
+           Viết văn xuôi, kể chuyện, lôi cuốn. 400-600 từ. Chỉ trả về nội dung truyện tiếng Việt.`
+        : `You are a novelist. Write content for chapter "${item.title}" of "${bookTitle}". ${ideaContext}
            Goal: "${item.focus}". Plot points: ${item.actions.join(', ')}.
-           Write in prose, storytelling style, engaging and emotional. 400-600 words. Output strictly in English.`;
+           Write in prose, storytelling style. 400-600 words. Output strictly in English.`;
     
     return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
             model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
             contents: [{ parts: [{ text: prompt }] }],
         });
-        return response.text;
+        return response.text || "";
     }, apiKey);
 };
 
@@ -142,25 +157,21 @@ export const generateReviewBlock = async (storyContent: string, chapterTitle: st
         : `Channel Name: "${channelName || 'Your Channel'}", Host Name: "${mcName || 'Me'}".`;
 
     const prompt = isVi
-        ? `Bạn là một Reviewer/MC kênh AudioBook nổi tiếng (giọng đọc trầm ấm, sâu sắc).
-           Thông tin định danh: ${identityInfo}. Hãy sử dụng tên Kênh và tên MC này thay cho các từ chung chung khi chào hỏi hoặc giới thiệu.
-           Nhiệm vụ: Viết lời dẫn/kịch bản Review cho phần nội dung sau của cuốn sách "${bookTitle}".
-           Chương: "${chapterTitle}"
-           Nội dung gốc: "${storyContent}"
-           Yêu cầu: Phân tích, bình luận, dẫn dắt. Đan xen tóm tắt và bài học. Giọng văn tự nhiên. Trả lời Tiếng Việt.`
-        : `You are a famous Audiobook Narrator/Reviewer (warm, insightful voice).
-           Identity Info: ${identityInfo}. Use this Channel Name and Host Name naturally in intros/outros instead of placeholders.
-           Task: Write a script/commentary review for the following content of the book "${bookTitle}".
-           Chapter: "${chapterTitle}"
-           Original Content: "${storyContent}"
-           Requirements: Analyze, commentate, and guide the listener. Interweave summary with deep insights. Natural, conversational tone. Output strictly in English.`;
+        ? `Bạn là MC AudioBook (giọng đọc trầm ấm). ${identityInfo}.
+           Viết lời dẫn/review cho: "${bookTitle}", Chương: "${chapterTitle}".
+           Nội dung gốc: "${storyContent.substring(0, 5000)}"
+           Yêu cầu: Phân tích, bình luận, dẫn dắt. Giọng văn tự nhiên. Trả lời Tiếng Việt.`
+        : `You are an Audiobook Narrator. ${identityInfo}.
+           Write commentary/script for: "${bookTitle}", Chapter: "${chapterTitle}".
+           Original Content: "${storyContent.substring(0, 5000)}"
+           Requirements: Analyze, commentate, guide. Natural tone. Output strictly in English.`;
     
     return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
             model: model.includes('gpt') ? 'gemini-3-flash-preview' : model,
             contents: [{ parts: [{ text: prompt }] }],
         });
-        return response.text;
+        return response.text || "";
     }, apiKey);
 };
 
@@ -192,8 +203,7 @@ export const generateSEO = async (bookTitle: string, channelName: string, durati
                 }
             }
         });
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
+        return safeJsonParse(response.text);
     }, apiKey);
 };
 
@@ -212,8 +222,7 @@ export const generateVideoPrompts = async (bookTitle: string, frameRatio: string
                 }
             }
         });
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
+        return safeJsonParse(response.text);
     }, apiKey);
 };
 
@@ -236,8 +245,7 @@ export const generateThumbIdeas = async (bookTitle: string, durationMin: number,
                 }
             }
         });
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
+        return safeJsonParse(response.text);
     }, apiKey);
 };
 
@@ -246,17 +254,19 @@ export const generateThumbIdeas = async (bookTitle: string, durationMin: number,
 export const generateSEOFromContent = async (storyContent: string, channelName: string, durationMin: number, language: Language, model: string = 'gemini-3-pro-preview', apiKey?: string): Promise<SEOResult> => {
     const isVi = language === 'vi';
     const channelContext = channelName ? (isVi ? `Tên kênh là "${channelName}".` : `Channel name is "${channelName}".`) : "";
+    
+    // TRUNCATE CONTENT SAFELY: 15,000 characters (~4000 tokens) is plenty for context but safe from limits.
+    const truncatedContent = storyContent.substring(0, 15000);
 
-    // Prompt chuyên biệt để phân tích nội dung truyện upload
     const prompt = isVi
-        ? `Hãy đọc đoạn trích nội dung truyện bên dưới. Bỏ qua tên file nếu nó vô nghĩa. Tự xác định tên truyện, thể loại, nhân vật chính từ nội dung.
+        ? `Hãy đọc đoạn trích truyện bên dưới. Bỏ qua tên file nếu vô nghĩa. Tự xác định tên truyện, thể loại, nhân vật chính từ nội dung.
            Nhiệm vụ: Tạo nội dung SEO cho video YouTube Review/Kể chuyện dài ${durationMin} phút về tác phẩm này. ${channelContext}
-           Nội dung truyện: "${storyContent.substring(0, 30000)}..." (đã cắt ngắn)
-           Yêu cầu output: 8 tiêu đề clickbait hấp dẫn (dựa trên cốt truyện thực tế), hashtags, keywords (bao gồm tên kênh), và mô tả video chuẩn SEO (tóm tắt cốt truyện và nhắc đến tên kênh). JSON format. Ngôn ngữ: Tiếng Việt.`
-        : `Read the story excerpt below. Ignore the filename if generic. Identify the real title, genre, and main characters from the content.
-           Task: Generate SEO content for a YouTube video Review/Audiobook (${durationMin} mins) about this story. ${channelContext}
-           Story Excerpt: "${storyContent.substring(0, 30000)}..." (truncated)
-           Output Requirements: 8 clickbait titles (based on actual plot), hashtags, keywords (include channel name), and a SEO-optimized video description (summarize plot and mention channel). JSON format. Language: English.`;
+           Nội dung truyện (trích đoạn): "${truncatedContent}..."
+           Yêu cầu output: 8 tiêu đề clickbait hấp dẫn (dựa trên cốt truyện), hashtags, keywords (gồm tên kênh), và mô tả video chuẩn SEO (tóm tắt cốt truyện & nhắc tên kênh). JSON format. Ngôn ngữ: Tiếng Việt.`
+        : `Read the story excerpt below. Ignore filename if generic. Identify real title, genre, characters.
+           Task: Generate SEO content for YouTube Review/Audiobook (${durationMin} mins). ${channelContext}
+           Story Excerpt: "${truncatedContent}..."
+           Output Requirements: 8 clickbait titles (based on plot), hashtags, keywords (include channel name), and SEO description. JSON format. Language: English.`;
 
     return executeGenAIRequest(async (ai) => {
         const response = await ai.models.generateContent({
@@ -276,14 +286,15 @@ export const generateSEOFromContent = async (storyContent: string, channelName: 
                 }
             }
         });
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
+        return safeJsonParse(response.text);
     }, apiKey);
 };
 
 export const generateVideoPromptsFromContent = async (storyContent: string, frameRatio: string, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
-    const prompt = `Analyze the following story excerpt. Identify the setting, mood, and visual style.
-    Story Excerpt: "${storyContent.substring(0, 20000)}..."
+    // Truncate safely
+    const truncatedContent = storyContent.substring(0, 10000);
+
+    const prompt = `Analyze the story excerpt: "${truncatedContent}...". Identify setting, mood, and visual style.
     Task: Generate 5 cinematic, photorealistic video prompts for background visuals in a YouTube video about this story. Visuals should match the story's actual mood. Aspect ratio: ${frameRatio}. No text/logos. JSON array of strings.`;
     
     return executeGenAIRequest(async (ai) => {
@@ -298,21 +309,21 @@ export const generateVideoPromptsFromContent = async (storyContent: string, fram
                 }
             }
         });
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
+        return safeJsonParse(response.text);
     }, apiKey);
 };
 
 export const generateThumbIdeasFromContent = async (storyContent: string, durationMin: number, language: Language, model: string = 'gemini-3-flash-preview', apiKey?: string): Promise<string[]> => {
     const isVi = language === 'vi';
     const durationStr = `${Math.floor(durationMin / 60)}H${(durationMin % 60).toString().padStart(2, "0")}M`;
-    
+    const truncatedContent = storyContent.substring(0, 10000);
+
     const prompt = isVi
-        ? `Đọc đoạn trích truyện sau và hiểu cốt truyện chính: "${storyContent.substring(0, 20000)}..."
-           Cho video YouTube về truyện này, đề xuất 5 text thumbnail ngắn gọn, gây tò mò, sát với tình tiết gay cấn trong truyện. Ngôn ngữ: Tiếng Việt.
+        ? `Đọc đoạn trích: "${truncatedContent}...". Hiểu cốt truyện chính.
+           Cho video YouTube về truyện này, đề xuất 5 text thumbnail ngắn gọn, gây tò mò, sát với tình tiết gay cấn. Ngôn ngữ: Tiếng Việt.
            Yêu cầu: Một ý phải chứa thời lượng: ${durationStr}. JSON array.`
-        : `Read the story excerpt to understand the main plot: "${storyContent.substring(0, 20000)}..."
-           For a YouTube video about this story, suggest 5 short, curiosity-inducing thumbnail texts based on the actual dramatic plot points. Language: English.
+        : `Read excerpt: "${truncatedContent}...". Understand main plot.
+           Suggest 5 short, curiosity-inducing thumbnail texts based on actual dramatic plot points. Language: English.
            Requirement: One idea must include duration: ${durationStr}. JSON array.`;
     
     return executeGenAIRequest(async (ai) => {
@@ -327,8 +338,7 @@ export const generateThumbIdeasFromContent = async (storyContent: string, durati
                 }
             }
         });
-        const jsonText = response.text.trim();
-        return JSON.parse(jsonText);
+        return safeJsonParse(response.text);
     }, apiKey);
 };
 
